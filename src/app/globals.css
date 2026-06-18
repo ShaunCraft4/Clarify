@@ -1,0 +1,234 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+.dark {
+  color-scheme: dark;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+}
+
+/* Smooth theme transitions */
+*,
+*::before,
+*::after {
+  transition: background-color 0.25s ease, border-color 0.25s ease,
+    color 0.2s ease, fill 0.2s ease;
+}
+
+/* ── Dark theme ───────────────────────────────────────────────────────────
+   We remap the neutral utility classes inside .dark so the whole app gets a
+   coherent dark palette without touching every component. */
+.dark body {
+  background-color: #020617;
+  color: #e2e8f0;
+}
+.dark .bg-white {
+  background-color: #0f172a;
+}
+.dark .bg-slate-50 {
+  background-color: #020617;
+}
+.dark .bg-slate-100 {
+  background-color: #1e293b;
+}
+.dark .bg-slate-200 {
+  background-color: #334155;
+}
+.dark .border-slate-200 {
+  border-color: #1e293b;
+}
+.dark .border-slate-300 {
+  border-color: #334155;
+}
+.dark .text-slate-900 {
+  color: #f1f5f9;
+}
+.dark .text-slate-800 {
+  color: #e2e8f0;
+}
+.dark .text-slate-700 {
+  color: #e2e8f0;
+}
+.dark .text-slate-600 {
+  color: #cbd5e1;
+}
+.dark .text-slate-500 {
+  color: #94a3b8;
+}
+.dark .text-slate-400 {
+  color: #64748b;
+}
+.dark .text-slate-300 {
+  color: #475569;
+}
+.dark .text-white {
+  color: #f8fafc;
+}
+.dark .hover\:bg-slate-100:hover {
+  background-color: #1e293b;
+}
+.dark .hover\:bg-slate-50:hover {
+  background-color: #0f172a;
+}
+.dark .hover\:bg-slate-200:hover {
+  background-color: #334155;
+}
+.dark .hover\:text-slate-800:hover {
+  color: #e2e8f0;
+}
+.dark .hover\:text-slate-700:hover {
+  color: #e2e8f0;
+}
+/* Brand + status accents on dark */
+.dark .bg-brand-50 {
+  background-color: rgba(51, 117, 255, 0.16);
+}
+.dark .text-brand-700 {
+  color: #8ec0ff;
+}
+.dark .text-brand-600 {
+  color: #8ec0ff;
+}
+.dark .bg-amber-50 {
+  background-color: rgba(245, 158, 11, 0.16);
+}
+.dark .bg-emerald-50,
+.dark .bg-emerald-50\/50 {
+  background-color: rgba(16, 185, 129, 0.16);
+}
+.dark .bg-red-50,
+.dark .bg-red-50\/50 {
+  background-color: rgba(239, 68, 68, 0.16);
+}
+.dark .border-amber-200 {
+  border-color: rgba(245, 158, 11, 0.4);
+}
+.dark .border-emerald-200,
+.dark .border-emerald-300 {
+  border-color: rgba(16, 185, 129, 0.4);
+}
+.dark .border-red-200,
+.dark .border-red-100 {
+  border-color: rgba(239, 68, 68, 0.4);
+}
+.dark .border-brand-100,
+.dark .border-brand-200 {
+  border-color: rgba(51, 117, 255, 0.4);
+}
+.dark .bg-yellow-200 {
+  background-color: rgba(250, 204, 21, 0.35);
+}
+/* Dashed empty-state borders */
+.dark .border-dashed {
+  border-color: #334155;
+}
+
+/* Thin scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+/* Rendered study notes (markdown) */
+.prose-notes {
+  @apply text-slate-700 leading-relaxed;
+}
+.prose-notes h1 {
+  @apply text-xl font-bold text-slate-900 mt-0 mb-3;
+}
+.prose-notes h2 {
+  @apply text-base font-semibold text-slate-900 mt-5 mb-2;
+}
+.prose-notes h3 {
+  @apply text-sm font-semibold text-slate-800 mt-4 mb-1.5;
+}
+.prose-notes p {
+  @apply my-2;
+}
+.prose-notes ul {
+  @apply list-disc pl-5 my-2 space-y-1;
+}
+.prose-notes ol {
+  @apply list-decimal pl-5 my-2 space-y-1;
+}
+.prose-notes li {
+  @apply leading-relaxed;
+}
+.prose-notes strong {
+  @apply font-semibold text-slate-900;
+}
+.prose-notes code {
+  @apply bg-slate-100 rounded px-1 py-0.5 text-sm;
+}
+.prose-notes a {
+  @apply text-brand-600 underline;
+}
+.prose-notes blockquote {
+  @apply bg-amber-50 border border-amber-200 text-amber-900 rounded-md px-3 py-2 my-2 not-italic;
+}
+.prose-notes blockquote p {
+  @apply my-0;
+}
+.prose-notes table {
+  @apply w-full text-sm my-3 border-collapse;
+}
+.prose-notes th,
+.prose-notes td {
+  @apply border border-slate-200 px-2 py-1 text-left;
+}
+
+.dark .prose-notes {
+  color: #cbd5e1;
+}
+.dark .prose-notes h1,
+.dark .prose-notes h2,
+.dark .prose-notes h3,
+.dark .prose-notes strong {
+  color: #f1f5f9;
+}
+.dark .prose-notes code {
+  background-color: #1e293b;
+}
+.dark .prose-notes blockquote {
+  background-color: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fcd9a4;
+}
+
+/* Flashcard flip */
+.flip-card {
+  perspective: 1200px;
+}
+.flip-inner {
+  transform-style: preserve-3d;
+  transition: transform 0.5s;
+}
+.flip-inner.flipped {
+  transform: rotateY(180deg);
+}
+.flip-face {
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.flip-back {
+  transform: rotateY(180deg);
+}
