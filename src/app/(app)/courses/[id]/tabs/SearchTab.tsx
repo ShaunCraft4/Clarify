@@ -4,6 +4,7 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/lib/fetcher";
+import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import { Search, Loader2, FileText, BookOpen, ChevronDown } from "lucide-react";
 
 interface Source {
@@ -64,13 +65,20 @@ export default function SearchTab({ courseId }: { courseId: string }) {
           {loading ? (
             <>
               <Loader2 className="h-4 w-4 animate-spin" />
-              Writing notes…
+              Searching…
             </>
           ) : (
-            "Make notes"
+            "Search"
           )}
         </button>
       </form>
+
+      <ActivityProgress
+        active={loading}
+        label="Searching your materials and writing notes…"
+        estimateSeconds={ACTIVITY_ESTIMATES.search}
+        hint="Finding relevant excerpts, then summarizing with AI."
+      />
 
       {error && (
         <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">

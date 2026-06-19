@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
+import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { Flashcard } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import {
@@ -117,6 +118,13 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
           {error}
         </p>
       )}
+
+      <ActivityProgress
+        active={generating}
+        label="Generating flashcards…"
+        estimateSeconds={ACTIVITY_ESTIMATES.flashcards}
+        hint="Reading your materials and creating Q&A pairs."
+      />
 
       {cards.length === 0 ? (
         <div className="rounded-2xl border-2 border-dashed border-slate-200 p-12 text-center">

@@ -1,7 +1,8 @@
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractPdfText, extractPlainText } from "@/lib/pdf";
 import { chunkText } from "@/lib/ai/chunking";
-import { embed } from "@/lib/ai/embeddings";
+import { embedDocuments } from "@/lib/ai/embeddings";
+import { ocrPdf } from "@/lib/ai/gemini";
 import type { FileType, MaterialStatus } from "@/lib/types";
 
 const BUCKET = "materials";
@@ -13,6 +14,44 @@ async function setStatus(
 ) {
   const admin = createAdminClient();
   await admin.from("materials").update({ status, ...extra }).eq("id", materialId);
+}
+
+/**
+ * Chunk → embed → store a block of text against a material, updating status as
+ * it goes. Shared by file uploads and AI-generated topic materials.
+ */
+async function embedAndStore(
+  materialId: string,
+  courseId: string,
+  userId: string,
+  text: string
+) {
+  const admin = createAdminClient();
+
+  await setStatus(materialId, "chunking", { extracted_text: text });
+  const chunks = chunkText(text);
+  if (chunks.length === 0) throw new Error("Text produced no chunks");
+
+  await setStatus(materialId, "embedding");
+  const vectors = await embedDocuments(chunks.map((c) => c.content));
+  const rows = chunks.map((chunk, i) => ({
+    material_id: materialId,
+    course_id: courseId,
+    user_id: userId,
+    content: chunk.content,
+    // pgvector expects the literal "[1,2,3]" text format, not a JS array.
+    embedding: JSON.stringify(vectors[i]),
+    chunk_index: chunk.index,
+    metadata: {},
+  }));
+
+  for (let i = 0; i < rows.length; i += 50) {
+    const batch = rows.slice(i, i + 50);
+    const { error } = await admin.from("chunks").insert(batch);
+    if (error) throw error;
+  }
+
+  await setStatus(materialId, "done", { chunk_count: rows.length });
 }
 
 /**
@@ -38,49 +77,26 @@ export async function processMaterial(params: {
     if (dlErr || !file) throw new Error("Could not download uploaded file");
 
     const buffer = Buffer.from(await file.arrayBuffer());
-    const text =
+    let text =
       fileType === "notes"
         ? extractPlainText(buffer)
         : await extractPdfText(buffer);
 
+    // Scanned PDFs have no embedded text layer, so pdf-parse returns little or
+    // nothing. Fall back to Gemini vision OCR to read the page images.
+    if (fileType !== "notes" && (!text || text.length < 20)) {
+      await setStatus(materialId, "extracting", { error: null });
+      text = await ocrPdf(buffer);
+    }
+
     if (!text || text.length < 10) {
       throw new Error(
-        "No extractable text found. If this is a scanned PDF, it needs OCR."
+        "No readable text could be extracted from this file, even with OCR."
       );
     }
 
-    // 2. Chunk
-    await setStatus(materialId, "chunking", { extracted_text: text });
-    const chunks = chunkText(text);
-    if (chunks.length === 0) throw new Error("Text produced no chunks");
-
-    // 3. Embed + store (sequential via the embed queue to respect rate limits)
-    await setStatus(materialId, "embedding");
-    const rows = [];
-    for (const chunk of chunks) {
-      const embedding = await embed(chunk.content, "RETRIEVAL_DOCUMENT");
-      rows.push({
-        material_id: materialId,
-        course_id: courseId,
-        user_id: userId,
-        content: chunk.content,
-        // pgvector expects the literal "[1,2,3]" text format, not a JS array
-        // (PostgREST would otherwise serialise it as a Postgres array `{...}`).
-        embedding: JSON.stringify(embedding),
-        chunk_index: chunk.index,
-        metadata: {},
-      });
-    }
-
-    // Insert in batches to keep payloads reasonable.
-    for (let i = 0; i < rows.length; i += 50) {
-      const batch = rows.slice(i, i + 50);
-      const { error } = await admin.from("chunks").insert(batch);
-      if (error) throw error;
-    }
-
-    // 4. Done
-    await setStatus(materialId, "done", { chunk_count: rows.length });
+    // 2–4. Chunk → embed → store
+    await embedAndStore(materialId, courseId, userId, text);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Processing failed";
     console.error(`[pipeline] material ${materialId} failed:`, err);

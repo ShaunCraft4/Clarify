@@ -10,6 +10,8 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
+  Sparkles,
+  NotebookPen,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -23,14 +25,10 @@ type MaterialRow = Pick<
   | "error"
   | "chunk_count"
   | "uploaded_at"
+  | "storage_path"
 >;
 
-const STEPS: { key: Material["status"]; label: string }[] = [
-  { key: "extracting", label: "Extracting text" },
-  { key: "chunking", label: "Chunking" },
-  { key: "embedding", label: "Embedding" },
-  { key: "done", label: "Done" },
-];
+const isGenerated = (m: MaterialRow) => m.storage_path === null;
 
 function StatusBadge({ m }: { m: MaterialRow }) {
   if (m.status === "done") {
@@ -52,20 +50,28 @@ function StatusBadge({ m }: { m: MaterialRow }) {
       </span>
     );
   }
-  const stepIndex = STEPS.findIndex((s) => s.key === m.status);
-  const label =
-    m.status === "pending"
-      ? "Uploading"
-      : STEPS[stepIndex]?.label ?? "Processing";
+  const gen = isGenerated(m);
+  const labels: Record<string, string> = {
+    pending: gen ? "Queued" : "Uploading",
+    extracting: gen ? "Researching" : "Extracting text",
+    chunking: gen ? "Organizing" : "Chunking",
+    embedding: "Embedding",
+  };
   return (
     <span className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 bg-brand-50 rounded-full px-2.5 py-1">
       <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      {label}…
+      {labels[m.status] ?? "Processing"}…
     </span>
   );
 }
 
-export default function MaterialsTab({ courseId }: { courseId: string }) {
+export default function MaterialsTab({
+  courseId,
+  onGoToNotes,
+}: {
+  courseId: string;
+  onGoToNotes?: () => void;
+}) {
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [fileType, setFileType] = useState<FileType>("pdf");
   const [dragging, setDragging] = useState(false);
@@ -190,6 +196,34 @@ export default function MaterialsTab({ courseId }: { courseId: string }) {
         )}
       </div>
 
+      {/* No-material hint → Notes generator */}
+      <div className="rounded-2xl border border-brand-100 bg-gradient-to-br from-brand-50/60 to-transparent p-5">
+        <div className="flex items-start gap-3">
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-700">
+            <NotebookPen className="h-5 w-5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <h3 className="font-semibold text-slate-800">
+              Don&apos;t have material for a topic?
+            </h3>
+            <p className="text-sm text-slate-500 mt-0.5">
+              Head to the <b className="text-slate-700">Notes</b> tab, generate
+              polished notes for the topic, download them, then upload the file
+              here so you can search, quiz, and revise from it.
+            </p>
+            {onGoToNotes && (
+              <button
+                onClick={onGoToNotes}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-brand-700 hover:shadow active:scale-[0.98]"
+              >
+                <NotebookPen className="h-4 w-4" />
+                Open the Notes generator
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="space-y-2">
         <h2 className="font-semibold text-slate-700">
           Library ({materials.length})
@@ -204,12 +238,25 @@ export default function MaterialsTab({ courseId }: { courseId: string }) {
             key={m.id}
             className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3"
           >
-            <div className="h-9 w-9 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500">
-              <FileText className="h-5 w-5" />
+            <div
+              className={cn(
+                "h-9 w-9 rounded-lg flex items-center justify-center",
+                isGenerated(m)
+                  ? "bg-brand-50 text-brand-600"
+                  : "bg-slate-100 text-slate-500"
+              )}
+            >
+              {isGenerated(m) ? (
+                <Sparkles className="h-5 w-5" />
+              ) : (
+                <FileText className="h-5 w-5" />
+              )}
             </div>
             <div className="min-w-0 flex-1">
               <p className="font-medium truncate">{m.file_name}</p>
-              <p className="text-xs text-slate-400 capitalize">{m.file_type}</p>
+              <p className="text-xs text-slate-400 capitalize">
+                {isGenerated(m) ? "AI topic · web-researched" : m.file_type}
+              </p>
             </div>
             <StatusBadge m={m} />
             <button

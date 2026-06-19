@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "smoke": "node scripts/smoke-test.mjs",
+    "smoke:ai": "npx --yes tsx scripts/smoke-ai.mjs"
   },
   "dependencies": {
     "@google/generative-ai": "^0.21.0",

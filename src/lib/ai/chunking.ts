@@ -5,8 +5,8 @@ export interface TextChunk {
 
 // text-embedding-004 works on tokens; we approximate ~4 chars per token.
 const CHARS_PER_TOKEN = 4;
-const CHUNK_TOKENS = 400;
-const OVERLAP_TOKENS = 50;
+const CHUNK_TOKENS = 800;
+const OVERLAP_TOKENS = 80;
 
 const CHUNK_CHARS = CHUNK_TOKENS * CHARS_PER_TOKEN;
 const OVERLAP_CHARS = OVERLAP_TOKENS * CHARS_PER_TOKEN;

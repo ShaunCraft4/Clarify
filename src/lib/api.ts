@@ -1,5 +1,6 @@
+import { headers } from "next/headers";
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createClient, createClientWithToken } from "@/lib/supabase/server";
 import type { SupabaseClient, User } from "@supabase/supabase-js";
 
 export class ApiError extends Error {
@@ -13,14 +14,34 @@ export interface AuthedContext {
   user: User;
 }
 
-/** Resolve the signed-in user or throw a 401. */
+/**
+ * Resolve the signed-in user or throw 401.
+ * Tries cookie session first, then Authorization: Bearer (needed when cookie
+ * refresh lags on long-running API handlers like search / notes).
+ */
 export async function requireUser(): Promise<AuthedContext> {
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user) throw new ApiError(401, "Not authenticated");
-  return { supabase, user };
+  if (user) return { supabase, user };
+
+  const hdrs = await headers();
+  const auth = hdrs.get("authorization");
+  if (auth?.startsWith("Bearer ")) {
+    const token = auth.slice(7).trim();
+    if (token) {
+      const { data, error } = await supabase.auth.getUser(token);
+      if (!error && data.user) {
+        return {
+          supabase: createClientWithToken(token),
+          user: data.user,
+        };
+      }
+    }
+  }
+
+  throw new ApiError(401, "Not authenticated");
 }
 
 /** Ensure the user owns the course, returning it. */

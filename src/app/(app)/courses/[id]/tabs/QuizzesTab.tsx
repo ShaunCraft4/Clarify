@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
+import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { QuizQuestionPublic, TopicBreakdown } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import {
@@ -225,6 +226,12 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
             )}
           </button>
         </div>
+        <ActivityProgress
+          active={generating}
+          label="Generating your quiz…"
+          estimateSeconds={ACTIVITY_ESTIMATES.quiz}
+          hint={`Creating ${total} questions from your course materials.`}
+        />
       </div>
 
       {error && (

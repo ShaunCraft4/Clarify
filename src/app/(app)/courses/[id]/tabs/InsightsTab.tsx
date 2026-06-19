@@ -7,6 +7,7 @@ import DependencyGraphView, {
   type GraphNode,
   type GraphEdge,
 } from "@/components/DependencyGraphView";
+import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import {
   AlertTriangle,
   Loader2,
@@ -54,18 +55,25 @@ function RunButton({
   label: string;
 }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={loading}
-      className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-    >
-      {loading ? (
-        <Loader2 className="h-4 w-4 animate-spin" />
-      ) : (
-        <Sparkles className="h-4 w-4" />
-      )}
-      {label}
-    </button>
+    <div className="space-y-3">
+      <button
+        onClick={onClick}
+        disabled={loading}
+        className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+      >
+        {loading ? (
+          <Loader2 className="h-4 w-4 animate-spin" />
+        ) : (
+          <Sparkles className="h-4 w-4" />
+        )}
+        {label}
+      </button>
+      <ActivityProgress
+        active={loading}
+        label="Analyzing…"
+        estimateSeconds={ACTIVITY_ESTIMATES.insights}
+      />
+    </div>
   );
 }
 

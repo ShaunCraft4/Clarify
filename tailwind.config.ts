@@ -27,9 +27,33 @@ const config: Config = {
           "0%": { opacity: "0", transform: "translateY(4px)" },
           "100%": { opacity: "1", transform: "translateY(0)" },
         },
+        "fade-in-up": {
+          "0%": { opacity: "0", transform: "translateY(12px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "tab-in": {
+          "0%": { opacity: "0", transform: "translateY(6px) scale(0.995)" },
+          "100%": { opacity: "1", transform: "translateY(0) scale(1)" },
+        },
+        "page-in": {
+          "0%": { opacity: "0", transform: "translateY(10px)" },
+          "100%": { opacity: "1", transform: "translateY(0)" },
+        },
+        "scale-in": {
+          "0%": { opacity: "0", transform: "scale(0.96)" },
+          "100%": { opacity: "1", transform: "scale(1)" },
+        },
+        shimmer: {
+          "100%": { transform: "translateX(100%)" },
+        },
       },
       animation: {
         "fade-in": "fade-in 0.2s ease-out",
+        "fade-in-up": "fade-in-up 0.4s cubic-bezier(0.22, 1, 0.36, 1)",
+        "tab-in": "tab-in 0.32s cubic-bezier(0.22, 1, 0.36, 1)",
+        "page-in": "page-in 0.42s cubic-bezier(0.22, 1, 0.36, 1)",
+        "scale-in": "scale-in 0.2s ease-out",
+        shimmer: "shimmer 1.6s infinite",
       },
     },
   },

@@ -1,4 +1,5 @@
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { createClient as createSupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
 
 type CookieToSet = { name: string; value: string; options?: CookieOptions };
@@ -28,6 +29,19 @@ export async function createClient() {
             // This can be ignored if middleware refreshes sessions.
           }
         },
+      },
+    }
+  );
+}
+
+/** Supabase client scoped to a bearer access token (RLS applies to that user). */
+export function createClientWithToken(accessToken: string) {
+  return createSupabaseClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      global: {
+        headers: { Authorization: `Bearer ${accessToken}` },
       },
     }
   );

@@ -58,7 +58,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
   }
 
   return (
-    <div className="min-h-screen grid lg:grid-cols-2 relative">
+    <div className="min-h-screen grid lg:grid-cols-2 relative animate-page-in">
       <ThemeToggle className="absolute top-4 right-4 z-10" />
       <div className="hidden lg:flex flex-col justify-between bg-gradient-to-br from-brand-700 to-brand-900 p-12 text-white">
         <div className="flex items-center gap-2 text-xl font-semibold">

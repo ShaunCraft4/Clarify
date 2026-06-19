@@ -109,7 +109,7 @@ export default function DashboardClient({
         <div className="flex items-center gap-2">
           <button
             onClick={() => setCreating(true)}
-            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 font-medium text-white hover:bg-brand-700"
+            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 font-medium text-white shadow-sm hover:bg-brand-700 hover:shadow-md active:scale-[0.98]"
           >
             <Plus className="h-4 w-4" />
             New course
@@ -136,10 +136,11 @@ export default function DashboardClient({
       )}
 
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {courses.map((course) => (
+        {courses.map((course, i) => (
           <div
             key={course.id}
-            className="group relative rounded-2xl border border-slate-200 bg-white p-5 hover:shadow-md transition-shadow"
+            style={{ animationDelay: `${Math.min(i * 50, 400)}ms` }}
+            className="group relative rounded-2xl border border-slate-200 bg-white p-5 lift animate-fade-in-up"
           >
             <div className="absolute top-3 right-3 flex gap-1 opacity-70 group-hover:opacity-100 transition-opacity">
               <button
@@ -158,7 +159,7 @@ export default function DashboardClient({
               </button>
             </div>
             <Link href={`/courses/${course.id}`} className="block">
-              <div className="h-10 w-10 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+              <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-brand-500 to-brand-600 text-white flex items-center justify-center shadow-sm shadow-brand-500/30">
                 <CardIcon />
               </div>
               <h3 className="mt-3 font-semibold text-lg truncate">
@@ -185,8 +186,8 @@ export default function DashboardClient({
       </div>
 
       {creating && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-          <div className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
+        <div className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="modal-panel w-full max-w-md rounded-2xl bg-white p-6 shadow-xl">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">New course</h2>
               <button
@@ -236,11 +237,11 @@ export default function DashboardClient({
 
       {deleteTarget && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
+          className="modal-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
           onClick={() => !deleting && setDeleteTarget(null)}
         >
           <div
-            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+            className="modal-panel w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-start gap-3">

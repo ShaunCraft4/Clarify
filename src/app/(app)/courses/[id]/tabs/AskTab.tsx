@@ -6,6 +6,7 @@ import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/lib/fetcher";
 import type { Citation } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import { Send, Loader2, FileText, MessageSquare, Trash2 } from "lucide-react";
 
 interface Message {
@@ -184,10 +185,13 @@ export default function AskTab({
           </div>
         ))}
         {loading && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl bg-white border border-slate-200 px-4 py-3">
-              <Loader2 className="h-5 w-5 animate-spin text-brand-600" />
-            </div>
+          <div className="flex justify-start max-w-md">
+            <ActivityProgress
+              active={loading}
+              label="Thinking…"
+              estimateSeconds={ACTIVITY_ESTIMATES.ask}
+              hint="Searching your materials and drafting an answer."
+            />
           </div>
         )}
         <div ref={endRef} />

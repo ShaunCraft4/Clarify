@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
+import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { StudyPlanDay } from "@/lib/types";
 import {
   CalendarDays,
@@ -140,6 +141,13 @@ export default function StudyPlanTab({ courseId }: { courseId: string }) {
           Generate plan
         </button>
       </form>
+
+      <ActivityProgress
+        active={loading}
+        label="Building your study plan…"
+        estimateSeconds={ACTIVITY_ESTIMATES.studyPlan}
+        hint="Analyzing weak topics and scheduling daily tasks."
+      />
 
       {error && (
         <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
