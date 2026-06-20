@@ -240,4 +240,8 @@ supabase/migrations/       # SQL schema + RLS + storage
 
 ## License
 
-Add your license here (e.g. MIT) before publishing to GitHub.
+Copyright (c) 2026 Shaun Kareparambil Shelly. All rights reserved unless granted below.
+
+Clarify is licensed under the [PolyForm Noncommercial License 1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0). See [LICENSE](./LICENSE) for the full text.
+
+**In short:** you may download, use, modify, and share Clarify for **noncommercial** purposes (personal use, study, hobby projects, etc.). You may **not** sell it, offer it as a paid service, or use it for other commercial purposes.
