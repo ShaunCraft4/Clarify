@@ -213,6 +213,20 @@ select {
   border-color: #334155;
 }
 
+/* Activity timer — always light card + dark text (readable in dark mode too) */
+.activity-progress {
+  background-color: #eff6ff;
+  border-color: #bfdbfe;
+  color-scheme: light;
+}
+.activity-progress__label {
+  color: #1e3a8a;
+}
+.activity-progress__hint,
+.activity-progress__time {
+  color: #1e293b;
+}
+
 /* Thin scrollbars */
 * {
   scrollbar-width: thin;
@@ -291,6 +305,33 @@ select {
   background-color: rgba(245, 158, 11, 0.16);
   border-color: rgba(245, 158, 11, 0.4);
   color: #fcd9a4;
+}
+
+@keyframes card-slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(48px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+@keyframes card-slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-48px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+.card-slide-in-right {
+  animation: card-slide-in-right 0.32s ease-out;
+}
+.card-slide-in-left {
+  animation: card-slide-in-left 0.32s ease-out;
 }
 
 /* Flashcard flip */

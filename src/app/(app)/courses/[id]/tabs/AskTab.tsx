@@ -98,6 +98,11 @@ export default function AskTab({
   function clearChat() {
     if (!confirm("Clear this conversation?")) return;
     setMessages([]);
+    try {
+      localStorage.removeItem(storageKey);
+    } catch {
+      /* ignore */
+    }
   }
 
   return (

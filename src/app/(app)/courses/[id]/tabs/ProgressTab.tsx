@@ -14,7 +14,8 @@ import {
   Tooltip,
   CartesianGrid,
 } from "recharts";
-import { Loader2, ListChecks, Layers, BarChart3, Target } from "lucide-react";
+import { Loader2, Target } from "lucide-react";
+import { cn } from "@/lib/cn";
 
 interface MasteryRow {
   topic: string;
@@ -36,43 +37,36 @@ interface ProgressData {
   };
 }
 
+interface ExamReadiness {
+  score: number;
+  breakdown: {
+    mastery: number;
+    quizTrend: number;
+    flashcards: number;
+    coverage: number;
+  };
+  weakTopics: string[];
+  summary: string;
+}
+
 function masteryColor(score: number) {
   if (score >= 0.8) return "#10b981";
   if (score >= 0.6) return "#f59e0b";
   return "#ef4444";
 }
 
-function Stat({
-  icon: Icon,
-  label,
-  value,
-}: {
-  icon: React.ElementType;
-  label: string;
-  value: string | number;
-}) {
-  return (
-    <div className="rounded-xl border border-slate-200 bg-white p-4">
-      <div className="flex items-center gap-2 text-slate-400">
-        <Icon className="h-4 w-4" />
-        <span className="text-xs font-medium uppercase tracking-wide">
-          {label}
-        </span>
-      </div>
-      <p className="text-2xl font-bold mt-1">{value}</p>
-    </div>
-  );
-}
-
 export default function ProgressTab({ courseId }: { courseId: string }) {
   const [data, setData] = useState<ProgressData | null>(null);
+  const [readiness, setReadiness] = useState<ExamReadiness | null>(null);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const d = await apiFetch<ProgressData>(
-      `/api/courses/${courseId}/progress`
-    );
+    const [d, r] = await Promise.all([
+      apiFetch<ProgressData>(`/api/courses/${courseId}/progress`),
+      apiFetch<ExamReadiness>(`/api/courses/${courseId}/exam-readiness`),
+    ]);
     setData(d);
+    setReadiness(r);
     setLoading(false);
   }, [courseId]);
 
@@ -98,37 +92,66 @@ export default function ProgressTab({ courseId }: { courseId: string }) {
     score: a.score,
   }));
 
+  const readinessColor =
+    (readiness?.score ?? 0) >= 80
+      ? "text-emerald-600"
+      : (readiness?.score ?? 0) >= 60
+        ? "text-amber-600"
+        : "text-red-600";
+
   return (
     <div className="p-8 max-w-4xl mx-auto space-y-8">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Stat
-          icon={ListChecks}
-          label="Quizzes"
-          value={data.stats.quizzesCompleted}
-        />
-        <Stat
-          icon={Layers}
-          label="Cards mastered"
-          value={`${data.stats.flashcardsMastered}/${data.stats.flashcardsTotal}`}
-        />
-        <Stat
-          icon={Target}
-          label="Topics tracked"
-          value={data.stats.topicsTracked}
-        />
-        <Stat
-          icon={BarChart3}
-          label="Avg score"
-          value={
-            data.attempts.length
-              ? `${Math.round(
-                  data.attempts.reduce((s, a) => s + a.score, 0) /
-                    data.attempts.length
-                )}%`
-              : "—"
-          }
-        />
-      </div>
+      {readiness && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <p className="text-sm font-medium text-slate-500 flex items-center gap-1.5">
+                <Target className="h-4 w-4" />
+                Exam readiness
+              </p>
+              <p className={cn("text-4xl font-bold mt-1", readinessColor)}>
+                {readiness.score}%
+              </p>
+              <p className="text-sm text-slate-500 mt-1">{readiness.summary}</p>
+            </div>
+            {readiness.weakTopics.length > 0 && (
+              <div className="text-right">
+                <p className="text-xs font-medium text-slate-500 mb-1">
+                  Weak topics
+                </p>
+                <div className="flex flex-wrap gap-1 justify-end max-w-[220px]">
+                  {readiness.weakTopics.map((t) => (
+                    <span
+                      key={t}
+                      className="text-xs rounded-full bg-red-50 text-red-700 px-2 py-0.5"
+                    >
+                      {t}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-4">
+            {(
+              [
+                ["Mastery", readiness.breakdown.mastery],
+                ["Quiz scores", readiness.breakdown.quizTrend],
+                ["Flashcards", readiness.breakdown.flashcards],
+                ["Coverage", readiness.breakdown.coverage],
+              ] as const
+            ).map(([label, val]) => (
+              <div
+                key={label}
+                className="rounded-lg bg-slate-50 border border-slate-100 px-3 py-2"
+              >
+                <p className="text-xs text-slate-500">{label}</p>
+                <p className="text-lg font-semibold">{val}%</p>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section>
         <h3 className="font-semibold text-slate-700 mb-3">Topic mastery</h3>

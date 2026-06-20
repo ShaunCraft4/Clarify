@@ -60,16 +60,18 @@ export default function ActivityProgress({
     <div
       role="status"
       aria-live="polite"
-      className="rounded-xl border border-brand-200 bg-brand-50/80 p-4 animate-fade-in"
+      className="activity-progress rounded-xl border p-4 animate-fade-in"
     >
-      <div className="flex items-center gap-2 text-sm font-medium text-brand-800">
+      <div className="activity-progress__label flex items-center gap-2 text-sm font-medium">
         <Loader2 className="h-4 w-4 shrink-0 animate-spin" />
         {label}
       </div>
-      {hint && <p className="mt-1 text-xs text-brand-700/80">{hint}</p>}
-      <p className="mt-2 text-xs text-slate-600">
+      {hint && (
+        <p className="activity-progress__hint mt-1 text-xs">{hint}</p>
+      )}
+      <p className="activity-progress__time mt-2 text-xs font-semibold">
         {timeLabel}
-        <span className="text-slate-400"> · {elapsed}s elapsed</span>
+        <span> · {elapsed}s elapsed</span>
       </p>
       <div className="mt-2.5 h-1.5 overflow-hidden rounded-full bg-brand-100">
         <div

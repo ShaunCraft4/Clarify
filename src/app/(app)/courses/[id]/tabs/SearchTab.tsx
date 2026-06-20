@@ -53,7 +53,7 @@ export default function SearchTab({ courseId }: { courseId: string }) {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder='e.g. "Summarize everything about the Industrial Revolution"'
+            placeholder='e.g. "Explain everything from all materials" or "red-black trees"'
             className="w-full rounded-lg border border-slate-300 pl-9 pr-3 py-2.5 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
         </div>
@@ -98,7 +98,8 @@ export default function SearchTab({ courseId }: { courseId: string }) {
 
       {result?.empty && (
         <p className="text-slate-500 text-center mt-10">
-          Nothing in this course&apos;s materials matched that topic.
+          No processed materials found yet. Upload files on the Materials tab,
+          wait for them to finish processing, then try again.
         </p>
       )}
 

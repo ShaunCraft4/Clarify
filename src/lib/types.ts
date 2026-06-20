@@ -50,7 +50,12 @@ export interface Flashcard {
   mastered_at: string | null;
   review_count: number;
   last_reviewed_at: string | null;
+  ease_factor: number;
+  interval_days: number;
+  due_at: string;
   created_at: string;
+  source_material?: string | null;
+  source_excerpt?: string | null;
 }
 
 export type QuestionType = "multiple_choice" | "short_answer" | "true_false";
@@ -75,6 +80,8 @@ export interface Quiz {
   course_id: string;
   title: string;
   created_at: string;
+  is_exam_sim?: boolean;
+  time_limit_minutes?: number | null;
   questions?: QuizQuestion[];
 }
 

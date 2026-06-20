@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireUser, ApiError } from "@/lib/api";
 import { updateTopicMastery, isCorrect } from "@/lib/mastery";
+import { gradeShortAnswer } from "@/lib/rubric-grade";
+import { isMissingTable } from "@/lib/db-schema";
 import type { QuizAttemptAnswer, TopicBreakdown } from "@/lib/types";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export async function POST(
   req: NextRequest,
@@ -26,31 +28,57 @@ export async function POST(
       .single();
     if (error || !quiz) throw new ApiError(404, "Quiz not found");
 
-    // Load questions WITH answers (server-side only) to grade.
+    const { data: rubric, error: rubricErr } = await supabase
+      .from("course_rubrics")
+      .select("extracted_text")
+      .eq("course_id", quiz.course_id)
+      .maybeSingle();
+
+    const rubricText =
+      rubricErr && isMissingTable(rubricErr)
+        ? null
+        : rubric?.extracted_text;
+
     const { data: questions, error: qErr } = await supabase
       .from("quiz_questions")
-      .select("id, type, correct_answer, topic")
+      .select("id, type, question, correct_answer, topic")
       .eq("quiz_id", id);
     if (qErr) throw qErr;
 
-    const byId = new Map(
-      (questions ?? []).map((q) => [q.id, q] as const)
-    );
     const answerById = new Map(submitted.map((a) => [a.questionId, a.answer]));
 
-    const graded: (QuizAttemptAnswer & { correctAnswer: string; topic: string })[] =
-      [];
+    const graded: (QuizAttemptAnswer & {
+      correctAnswer: string;
+      topic: string;
+      feedback?: string;
+    })[] = [];
     const topicTally = new Map<string, { correct: number; total: number }>();
 
     for (const q of questions ?? []) {
       const userAnswer = answerById.get(q.id) ?? "";
-      const correct = isCorrect(q.type, userAnswer, q.correct_answer);
+      let correct = false;
+      let feedback: string | undefined;
+
+      if (q.type === "short_answer" && rubricText) {
+        const result = await gradeShortAnswer(
+          q.question,
+          userAnswer,
+          q.correct_answer,
+          rubricText
+        );
+        correct = result.correct;
+        feedback = result.feedback;
+      } else {
+        correct = isCorrect(q.type, userAnswer, q.correct_answer);
+      }
+
       graded.push({
         questionId: q.id,
         answer: userAnswer,
         correct,
         correctAnswer: q.correct_answer,
         topic: q.topic,
+        feedback,
       });
       const t = topicTally.get(q.topic) ?? { correct: 0, total: 0 };
       t.total++;
@@ -86,8 +114,6 @@ export async function POST(
 
     await updateTopicMastery(supabase, user.id, quiz.course_id, topicBreakdown);
 
-    // Return graded detail so the UI can show per-question feedback.
-    void byId;
     return NextResponse.json({
       attemptId: attempt.id,
       score,

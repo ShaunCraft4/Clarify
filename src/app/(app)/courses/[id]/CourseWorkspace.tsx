@@ -14,7 +14,6 @@ import {
   Sparkles,
   NotebookPen,
 } from "lucide-react";
-import UsageMeter from "@/components/UsageMeter";
 import ThemeToggle from "@/components/ThemeToggle";
 import MaterialsTab from "./tabs/MaterialsTab";
 import AskTab from "./tabs/AskTab";
@@ -32,7 +31,7 @@ const TABS = [
   { id: "search", label: "Search", icon: Search },
   { id: "notes", label: "Notes", icon: NotebookPen },
   { id: "flashcards", label: "Flashcards", icon: Layers },
-  { id: "quizzes", label: "Quizzes", icon: ListChecks },
+  { id: "quizzes", label: "Quizzes and Exams", icon: ListChecks },
   { id: "progress", label: "Progress", icon: BarChart3 },
   { id: "plan", label: "Study Plan", icon: CalendarDays },
   { id: "insights", label: "Insights", icon: Sparkles },
@@ -54,7 +53,6 @@ export default function CourseWorkspace({ course }: { course: Course }) {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <UsageMeter />
             <ThemeToggle />
           </div>
         </div>
@@ -82,16 +80,20 @@ export default function CourseWorkspace({ course }: { course: Course }) {
       </header>
 
       <div className="flex-1 overflow-y-auto bg-slate-50">
+        <div
+          className={
+            tab === "ask" ? "flex h-full min-h-0 flex-col" : "hidden"
+          }
+        >
+          <AskTab courseId={course.id} courseName={course.name} />
+        </div>
         {/* key forces a remount per tab so the fade-in plays on every switch */}
-        <div key={tab} className="animate-tab-in">
+        <div key={tab} className={tab === "ask" ? "hidden" : "animate-tab-in"}>
           {tab === "materials" && (
             <MaterialsTab
               courseId={course.id}
               onGoToNotes={() => setTab("notes")}
             />
-          )}
-          {tab === "ask" && (
-            <AskTab courseId={course.id} courseName={course.name} />
           )}
           {tab === "search" && <SearchTab courseId={course.id} />}
           {tab === "notes" && <NotesTab courseId={course.id} />}

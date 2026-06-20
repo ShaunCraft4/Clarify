@@ -2,64 +2,26 @@ import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse } from "@/lib/api";
 import { retrieve, type RetrievedChunk } from "@/lib/retrieval";
 import { generateText, withTimeout } from "@/lib/ai/gemini";
+import {
+  isBroadOverviewQuery,
+  extractTopic,
+  topicKeywords,
+  keywordScore,
+} from "@/lib/search-query";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 60;
 
-const MAX_CHUNKS = 8;
-const MAX_CONTEXT_CHARS = 10_000;
+const BROAD_MAX_CHUNKS = 16;
+const BROAD_MAX_CONTEXT = 14_000;
+const TOPIC_MAX_CHUNKS = 10;
+const TOPIC_MAX_CONTEXT = 10_000;
 
-/** Queries asking for a full-course overview — skip literal phrase filtering. */
-function isBroadQuery(query: string): boolean {
-  const q = query.toLowerCase();
-  return (
-    /\b(everything|all materials?|all my materials?|entire course|whole course|full course)\b/.test(
-      q
-    ) ||
-    /\b(summarize|summary|overview|explain|describe|review)\s+(all|everything|entire|whole|my)\b/.test(
-      q
-    ) ||
-    /\bwhat\s+(is|are)\s+(covered|in)\s+(all|everything|my|the)\b/.test(q) ||
-    /^summarize\b/i.test(query) ||
-    /^overview\b/i.test(query)
-  );
-}
-
-/** Comma-separated topics, otherwise one phrase. */
-function extractPhrases(query: string): string[] {
-  return query.includes(",")
-    ? query
-        .split(",")
-        .map((p) => p.trim())
-        .filter(Boolean)
-    : [query];
-}
-
-/**
- * Match a topic phrase against chunk text. Multi-word phrases require every
- * word to appear (so "industrial revolution" won't match "russian revolution").
- */
-function phraseMatchesContent(content: string, phrase: string): boolean {
-  const lower = content.toLowerCase();
-  const p = phrase.toLowerCase().trim();
-  if (!p) return false;
-  if (lower.includes(p)) return true;
-
-  const words = p.split(/\s+/).filter((w) => w.length >= 3);
-  if (words.length <= 1) {
-    return words.length === 1 && lower.includes(words[0]);
-  }
-  return words.every((w) => lower.includes(w));
-}
-
-function chunkMatchesPhrases(content: string, phrases: string[]): boolean {
-  return phrases.some((p) => phraseMatchesContent(content, p));
-}
-
-/** Evenly sample chunks across materials — fast, no embedding call. */
+/** Evenly sample chunks across materials — no embedding call. */
 async function fetchRepresentativeChunks(
   supabase: SupabaseClient,
-  courseId: string
+  courseId: string,
+  maxChunks: number
 ): Promise<RetrievedChunk[]> {
   const { data: materials } = await supabase
     .from("materials")
@@ -85,7 +47,7 @@ async function fetchRepresentativeChunks(
     byMaterial.set(c.material_id, list);
   }
 
-  const perMat = Math.max(1, Math.ceil(MAX_CHUNKS / materials.length));
+  const perMat = Math.max(1, Math.ceil(maxChunks / materials.length));
   const out: RetrievedChunk[] = [];
   const nameById = new Map(materials.map((m) => [m.id, m.file_name]));
 
@@ -106,19 +68,68 @@ async function fetchRepresentativeChunks(
     }
   }
 
-  return out.slice(0, MAX_CHUNKS);
+  return out.slice(0, maxChunks);
 }
 
-function capContext(chunks: RetrievedChunk[]): RetrievedChunk[] {
+/** Keyword scan when semantic search returns too little. */
+async function fetchKeywordChunks(
+  supabase: SupabaseClient,
+  courseId: string,
+  keywords: string[],
+  maxChunks: number
+): Promise<RetrievedChunk[]> {
+  if (keywords.length === 0) return [];
+
+  const { data: all } = await supabase
+    .from("chunks")
+    .select("id, material_id, content, chunk_index, metadata")
+    .eq("course_id", courseId)
+    .limit(200);
+
+  if (!all?.length) return [];
+
+  const { data: mats } = await supabase
+    .from("materials")
+    .select("id, file_name")
+    .eq("course_id", courseId);
+  const names = new Map((mats ?? []).map((m) => [m.id, m.file_name]));
+
+  const scored = all
+    .map((c) => ({
+      ...c,
+      metadata: (c.metadata as RetrievedChunk["metadata"]) ?? {},
+      similarity: keywordScore(c.content, keywords) / keywords.length,
+      materialName: names.get(c.material_id) ?? "Unknown",
+    }))
+    .filter((c) => c.similarity > 0)
+    .sort((a, b) => b.similarity - a.similarity);
+
+  return scored.slice(0, maxChunks);
+}
+
+function capContext(
+  chunks: RetrievedChunk[],
+  maxChunks: number,
+  maxChars: number
+): RetrievedChunk[] {
   let total = 0;
   const kept: RetrievedChunk[] = [];
   for (const c of chunks) {
-    if (kept.length >= MAX_CHUNKS) break;
-    if (total + c.content.length > MAX_CONTEXT_CHARS && kept.length > 0) break;
+    if (kept.length >= maxChunks) break;
+    if (total + c.content.length > maxChars && kept.length > 0) break;
     kept.push(c);
     total += c.content.length;
   }
   return kept;
+}
+
+function dedupeChunks(chunks: RetrievedChunk[]): RetrievedChunk[] {
+  const seen = new Set<string>();
+  return chunks.filter((c) => {
+    if (seen.has(c.id)) return false;
+    seen.add(c.id);
+    return true;
+  });
 }
 
 export async function POST(
@@ -134,47 +145,51 @@ export async function POST(
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
 
-    const broad = isBroadQuery(query);
-    const phrases = extractPhrases(query);
+    const broad = isBroadOverviewQuery(query);
+    const maxChunks = broad ? BROAD_MAX_CHUNKS : TOPIC_MAX_CHUNKS;
+    const maxContext = broad ? BROAD_MAX_CONTEXT : TOPIC_MAX_CONTEXT;
     let chunks: RetrievedChunk[];
 
     if (broad) {
-      // Overview queries: sample across all materials (no embedding round-trip).
-      chunks = await fetchRepresentativeChunks(supabase, id);
+      chunks = await fetchRepresentativeChunks(supabase, id, maxChunks);
     } else {
-      // Topic queries: semantic search, then filter to relevant chunks only.
-      const semantic = await retrieve(supabase, id, query, 16);
-      chunks = semantic.filter((c) => chunkMatchesPhrases(c.content, phrases));
+      // Semantic search understands natural phrasing — trust it, don't keyword-filter.
+      const topic = extractTopic(query);
+      const searchText = topic.length >= 2 ? topic : query;
+      const semantic = await retrieve(supabase, id, searchText, maxChunks + 6);
+      chunks = semantic;
 
-      // Keyword fallback if semantic + filter found too little.
+      // Merge in keyword matches for typos / exact terminology the embedder missed.
+      const keywords = topicKeywords(query);
+      if (keywords.length > 0) {
+        const keywordHits = await fetchKeywordChunks(
+          supabase,
+          id,
+          keywords,
+          maxChunks
+        );
+        chunks = dedupeChunks([...chunks, ...keywordHits]);
+      }
+
+      // Still nothing — sample materials and rank by keywords.
       if (chunks.length < 2) {
-        const { data: all } = await supabase
-          .from("chunks")
-          .select("id, material_id, content, chunk_index, metadata")
-          .eq("course_id", id)
-          .limit(80);
-
-        const { data: mats } = await supabase
-          .from("materials")
-          .select("id, file_name")
-          .eq("course_id", id);
-        const names = new Map((mats ?? []).map((m) => [m.id, m.file_name]));
-        const have = new Set(chunks.map((c) => c.id));
-
-        for (const c of all ?? []) {
-          if (have.has(c.id)) continue;
-          if (!chunkMatchesPhrases(c.content, phrases)) continue;
-          chunks.push({
+        const sample = await fetchRepresentativeChunks(
+          supabase,
+          id,
+          maxChunks * 2
+        );
+        const keywords = topicKeywords(query);
+        chunks = sample
+          .map((c) => ({
             ...c,
-            metadata: (c.metadata as RetrievedChunk["metadata"]) ?? {},
-            similarity: 0,
-            materialName: names.get(c.material_id) ?? "Unknown",
-          });
-        }
+            similarity: keywordScore(c.content, keywords) / Math.max(keywords.length, 1),
+          }))
+          .filter((c) => c.similarity > 0)
+          .sort((a, b) => b.similarity - a.similarity);
       }
     }
 
-    chunks = capContext(chunks);
+    chunks = capContext(chunks, maxChunks, maxContext);
 
     if (chunks.length === 0) {
       return NextResponse.json({ notes: "", sources: [], empty: true });
@@ -184,14 +199,17 @@ export async function POST(
       .map((c, i) => `[Excerpt ${i + 1} — ${c.materialName}]\n${c.content}`)
       .join("\n\n---\n\n");
 
-    const topicLabel = broad ? "all course materials" : phrases.join(", ");
+    const topicLabel = broad
+      ? "all course materials"
+      : extractTopic(query) || query;
+
     const system = broad
-      ? `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts, write a clear, well-organized overview of what the student's materials cover. Use Markdown with a title, "##" sections by theme/topic, and bullet points. Bold key terms. Do not invent facts.`
-      : `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts, write clean study notes about: "${topicLabel}". Ignore unrelated content. Use Markdown with a title, "##" sub-headings, and bullet points. Bold key terms. Stay faithful to the materials.`;
+      ? `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts, write a thorough, well-organized recap of what the student's materials cover. Use Markdown with a title, "##" sections by theme/topic, and bullet points. Be comprehensive — cover every major theme present in the excerpts. Bold key terms. Do not invent facts.`
+      : `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts, write detailed study notes about: "${topicLabel}". Include definitions, key ideas, examples, and important details found in the excerpts. Use Markdown with a title, "##" sub-headings, and bullet points. Bold key terms. Stay faithful to the materials — do not invent content not supported by the excerpts.`;
 
     const prompt = broad
-      ? `Write an overview of everything covered in these course materials:\n\n${context}`
-      : `Topic: "${topicLabel}"\n\nExcerpts:\n\n${context}`;
+      ? `Write a comprehensive overview of everything covered in these course materials:\n\n${context}`
+      : `Topic: "${topicLabel}"\n\nWrite thorough study notes on this topic using these excerpts:\n\n${context}`;
 
     const notes = await withTimeout(
       generateText(prompt, system),

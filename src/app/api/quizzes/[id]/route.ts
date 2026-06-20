@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireUser, ApiError } from "@/lib/api";
+import { isMissingColumn } from "@/lib/db-schema";
 
 /** Fetch a quiz with its questions — WITHOUT the correct answers. */
 export async function GET(
@@ -10,11 +11,19 @@ export async function GET(
     const { id } = await params;
     const { supabase } = await requireUser();
 
-    const { data: quiz, error } = await supabase
+    let { data: quiz, error } = await supabase
       .from("quizzes")
-      .select("id, course_id, title, created_at")
+      .select("id, course_id, title, created_at, is_exam_sim, time_limit_minutes")
       .eq("id", id)
       .single();
+
+    if (isMissingColumn(error)) {
+      ({ data: quiz, error } = await supabase
+        .from("quizzes")
+        .select("id, course_id, title, created_at")
+        .eq("id", id)
+        .single());
+    }
     if (error || !quiz) throw new ApiError(404, "Quiz not found");
 
     const { data: questions, error: qErr } = await supabase
@@ -24,7 +33,15 @@ export async function GET(
       .order("position", { ascending: true });
     if (qErr) throw qErr;
 
-    return NextResponse.json({ quiz: { ...quiz, questions } });
+    return NextResponse.json({
+      quiz: {
+        ...quiz,
+        is_exam_sim: "is_exam_sim" in quiz ? Boolean(quiz.is_exam_sim) : false,
+        time_limit_minutes:
+          "time_limit_minutes" in quiz ? quiz.time_limit_minutes : null,
+        questions,
+      },
+    });
   });
 }
 

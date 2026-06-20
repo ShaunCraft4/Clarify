@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { Flashcard } from "@/lib/types";
+import {
+  flashcardsToAnkiCsv,
+  flashcardsToMarkdown,
+  downloadTextFile,
+} from "@/lib/flashcard-export";
 import { cn } from "@/lib/cn";
 import {
   Sparkles,
@@ -15,20 +20,37 @@ import {
   ChevronRight,
   Trash2,
   X,
+  Download,
+  FileText,
+  Clock,
 } from "lucide-react";
+
+function isDue(dueAt: string | null | undefined): boolean {
+  if (!dueAt) return true;
+  return new Date(dueAt) <= new Date();
+}
 
 export default function FlashcardsTab({ courseId }: { courseId: string }) {
   const [cards, setCards] = useState<Flashcard[]>([]);
+  const [dueCount, setDueCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
 
+  const reviewCards = useMemo(() => {
+    const due = cards.filter((c) => isDue(c.due_at));
+    if (due.length > 0) return due;
+    return cards;
+  }, [cards]);
+
   const load = useCallback(async () => {
-    const { flashcards } = await apiFetch<{ flashcards: Flashcard[] }>(
-      `/api/courses/${courseId}/flashcards`
-    );
+    const { flashcards, dueCount: due } = await apiFetch<{
+      flashcards: Flashcard[];
+      dueCount: number;
+    }>(`/api/courses/${courseId}/flashcards`);
     setCards(flashcards);
+    setDueCount(due);
     setLoading(false);
   }, [courseId]);
 
@@ -54,7 +76,9 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
 
   async function remove(id: string) {
     setCards((c) => c.filter((x) => x.id !== id));
-    await apiFetch(`/api/flashcards/${id}`, { method: "DELETE" }).catch(() => {});
+    await apiFetch(`/api/flashcards/${id}`, { method: "DELETE" }).catch(
+      () => {}
+    );
   }
 
   const masteredCount = cards.filter((c) => c.mastered_at).length;
@@ -67,11 +91,14 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
     );
   }
 
-  if (reviewing && cards.length > 0) {
+  if (reviewing && reviewCards.length > 0) {
     return (
       <ReviewMode
-        cards={cards}
-        onExit={() => setReviewing(false)}
+        cards={reviewCards}
+        onExit={() => {
+          setReviewing(false);
+          load();
+        }}
         onUpdate={(updated) =>
           setCards((cs) => cs.map((c) => (c.id === updated.id ? updated : c)))
         }
@@ -85,18 +112,48 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
         <div>
           <h2 className="text-lg font-semibold">Flashcards</h2>
           <p className="text-sm text-slate-500">
-            {cards.length} cards · {masteredCount} mastered
+            {cards.length} cards · {masteredCount} mastered ·{" "}
+            <span className={dueCount > 0 ? "text-amber-600 font-medium" : ""}>
+              {dueCount} due today
+            </span>
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
           {cards.length > 0 && (
-            <button
-              onClick={() => setReviewing(true)}
-              className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-100"
-            >
-              <Play className="h-4 w-4" />
-              Review
-            </button>
+            <>
+              <button
+                onClick={() =>
+                  downloadTextFile(
+                    flashcardsToMarkdown(cards),
+                    "flashcards.md",
+                    "text/markdown;charset=utf-8"
+                  )
+                }
+                className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                <Download className="h-4 w-4" />
+                Markdown
+              </button>
+              <button
+                onClick={() =>
+                  downloadTextFile(
+                    flashcardsToAnkiCsv(cards),
+                    "flashcards-anki.csv"
+                  )
+                }
+                className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+              >
+                <Download className="h-4 w-4" />
+                Anki CSV
+              </button>
+              <button
+                onClick={() => setReviewing(true)}
+                className="flex items-center gap-2 rounded-lg border border-slate-300 px-4 py-2 font-medium text-slate-700 hover:bg-slate-100"
+              >
+                <Play className="h-4 w-4" />
+                Review {dueCount > 0 ? `(${dueCount} due)` : "all"}
+              </button>
+            </>
           )}
           <button
             onClick={generate}
@@ -153,11 +210,24 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
               )}
               <p className="font-medium text-slate-800">{c.question}</p>
               <p className="text-sm text-slate-500 mt-2">{c.answer}</p>
-              {c.mastered_at && (
-                <span className="mt-2 inline-flex items-center gap-1 text-xs text-emerald-600">
-                  <Check className="h-3 w-3" /> Mastered
-                </span>
-              )}
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-slate-400">
+                {c.mastered_at && (
+                  <span className="inline-flex items-center gap-1 text-emerald-600">
+                    <Check className="h-3 w-3" /> Mastered
+                  </span>
+                )}
+                {isDue(c.due_at) && !c.mastered_at && (
+                  <span className="inline-flex items-center gap-1 text-amber-600">
+                    <Clock className="h-3 w-3" /> Due
+                  </span>
+                )}
+                {c.source_material && (
+                  <span className="inline-flex items-center gap-1">
+                    <FileText className="h-3 w-3" />
+                    {c.source_material}
+                  </span>
+                )}
+              </div>
             </div>
           ))}
         </div>
@@ -177,31 +247,44 @@ function ReviewMode({
 }) {
   const [i, setI] = useState(0);
   const [flipped, setFlipped] = useState(false);
+  const [showSource, setShowSource] = useState(false);
+  const [slideClass, setSlideClass] = useState("card-slide-in-right");
   const card = cards[i];
 
+  const goTo = useCallback(
+    (nextIndex: number, direction: "left" | "right") => {
+      setFlipped(false);
+      setShowSource(false);
+      setSlideClass(
+        direction === "right" ? "card-slide-in-right" : "card-slide-in-left"
+      );
+      setI(nextIndex);
+    },
+    []
+  );
+
   const next = useCallback(() => {
-    setFlipped(false);
-    setI((x) => Math.min(x + 1, cards.length - 1));
-  }, [cards.length]);
+    goTo(Math.min(i + 1, cards.length - 1), "right");
+  }, [cards.length, goTo, i]);
 
   const prev = useCallback(() => {
-    setFlipped(false);
-    setI((x) => Math.max(x - 1, 0));
-  }, []);
+    goTo(Math.max(i - 1, 0), "left");
+  }, [goTo, i]);
 
-  const mark = useCallback(
-    async (mastered: boolean) => {
+  const rate = useCallback(
+    async (rating: "again" | "good" | "easy") => {
       const { flashcard } = await apiFetch<{ flashcard: Flashcard }>(
         `/api/flashcards/${card.id}`,
         {
           method: "PATCH",
-          body: JSON.stringify({ mastered, reviewed: true }),
+          body: JSON.stringify({ rating, reviewed: true }),
         }
       );
       onUpdate(flashcard);
-      next();
+      if (i >= cards.length - 1) onExit();
+      else goTo(i + 1, "right");
     },
-    [card, next, onUpdate]
+    [card.id, cards.length, goTo, i, onExit, onUpdate]
   );
 
   useEffect(() => {
@@ -227,7 +310,7 @@ function ReviewMode({
           <X className="h-4 w-4" /> Exit review
         </button>
         <span className="text-sm text-slate-500">
-          {i + 1} / {cards.length}
+          {i + 1} / {cards.length} · spaced repetition
         </span>
       </div>
 
@@ -239,10 +322,16 @@ function ReviewMode({
       </div>
 
       <div
-        className="flip-card h-72 cursor-pointer"
+        key={card.id}
+        className={cn("flip-card h-72 cursor-pointer", slideClass)}
         onClick={() => setFlipped((f) => !f)}
       >
-        <div className={cn("flip-inner relative h-full w-full", flipped && "flipped")}>
+        <div
+          className={cn(
+            "flip-inner relative h-full w-full",
+            flipped && "flipped"
+          )}
+        >
           <div className="flip-face absolute inset-0 rounded-2xl border border-slate-200 bg-white p-8 flex flex-col items-center justify-center text-center">
             {card.topic && (
               <span className="text-xs font-medium text-brand-700 bg-brand-50 rounded-full px-2 py-0.5 mb-3">
@@ -252,7 +341,9 @@ function ReviewMode({
             <p className="text-xl font-semibold text-slate-800">
               {card.question}
             </p>
-            <p className="text-xs text-slate-400 mt-4">Click or press Space to flip</p>
+            <p className="text-xs text-slate-400 mt-4">
+              Click or press Space to flip
+            </p>
           </div>
           <div className="flip-face flip-back absolute inset-0 rounded-2xl border border-brand-200 bg-brand-50 p-8 flex items-center justify-center text-center">
             <p className="text-lg text-slate-800">{card.answer}</p>
@@ -260,7 +351,22 @@ function ReviewMode({
         </div>
       </div>
 
-      <div className="flex items-center justify-between mt-6">
+      {card.source_material && (
+        <button
+          onClick={() => setShowSource((s) => !s)}
+          className="mt-3 text-xs text-brand-600 hover:underline flex items-center gap-1"
+        >
+          <FileText className="h-3 w-3" />
+          {showSource ? "Hide" : "Show"} source · {card.source_material}
+        </button>
+      )}
+      {showSource && card.source_excerpt && (
+        <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+          {card.source_excerpt}…
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-6 gap-2">
         <button
           onClick={prev}
           disabled={i === 0}
@@ -269,20 +375,26 @@ function ReviewMode({
           <ChevronLeft className="h-5 w-5" />
         </button>
 
-        <div className="flex gap-2">
+        <div className="flex flex-wrap justify-center gap-2">
           <button
-            onClick={() => mark(false)}
-            className="flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-2 font-medium text-amber-700 hover:bg-amber-100"
+            onClick={() => rate("again")}
+            className="flex items-center gap-1.5 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
           >
             <RotateCcw className="h-4 w-4" />
-            Needs review
+            Again
           </button>
           <button
-            onClick={() => mark(true)}
-            className="flex items-center gap-2 rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 font-medium text-emerald-700 hover:bg-emerald-100"
+            onClick={() => rate("good")}
+            className="flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-2 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
           >
             <Check className="h-4 w-4" />
-            Mastered
+            Good
+          </button>
+          <button
+            onClick={() => rate("easy")}
+            className="flex items-center gap-1.5 rounded-lg border border-brand-300 bg-brand-50 px-3 py-2 text-sm font-medium text-brand-700 hover:bg-brand-100"
+          >
+            Easy
           </button>
         </div>
 

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse, ApiError } from "@/lib/api";
 import { generateQuizFromMaterials } from "@/lib/quiz-generate";
+import { computeExamReadiness } from "@/lib/exam-readiness";
 import { isMissingTable } from "@/lib/db-schema";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(
   req: NextRequest,
@@ -14,21 +15,10 @@ export async function POST(
     const { supabase, user, course } = await requireCourse(id);
     const body = await req.json().catch(() => ({}));
 
-    const clamp = (v: unknown) =>
-      Math.min(Math.max(Math.floor(Number(v) || 0), 0), 20);
-    const counts = {
-      multiple_choice: clamp(body.counts?.multiple_choice ?? 6),
-      true_false: clamp(body.counts?.true_false ?? 2),
-      short_answer: clamp(body.counts?.short_answer ?? 2),
-    };
-    const total =
-      counts.multiple_choice + counts.true_false + counts.short_answer;
-    if (total < 1) {
-      throw new ApiError(400, "Choose at least one question.");
-    }
-    if (total > 30) {
-      throw new ApiError(400, "Please keep the quiz to 30 questions or fewer.");
-    }
+    const timeLimitMinutes = Math.min(
+      120,
+      Math.max(10, Math.floor(Number(body.timeLimitMinutes) || 45))
+    );
 
     const { data: rubric, error: rubricErr } = await supabase
       .from("course_rubrics")
@@ -39,20 +29,33 @@ export async function POST(
     const rubricText =
       rubricErr && isMissingTable(rubricErr) ? null : rubric?.extracted_text;
 
+    const readiness = await computeExamReadiness(supabase, id);
+    const focusTopics =
+      readiness.weakTopics.length > 0
+        ? readiness.weakTopics
+        : ["General course review"];
+
     try {
       const result = await generateQuizFromMaterials({
         supabase,
         courseId: id,
         userId: user.id,
         courseName: course.name,
-        counts,
-        rubricText: rubricText,
+        counts: {
+          multiple_choice: 8,
+          true_false: 3,
+          short_answer: 4,
+        },
+        rubricText,
+        focusTopics,
+        isExamSim: true,
+        timeLimitMinutes,
       });
-      return NextResponse.json(result);
+      return NextResponse.json({ ...result, timeLimitMinutes });
     } catch (err) {
       throw new ApiError(
         502,
-        err instanceof Error ? err.message : "Generation failed"
+        err instanceof Error ? err.message : "Exam generation failed"
       );
     }
   });

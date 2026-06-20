@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { QuizQuestionPublic, TopicBreakdown } from "@/lib/types";
@@ -16,6 +16,9 @@ import {
   X as XIcon,
   Plus,
   Minus,
+  Timer,
+  Upload,
+  FileText,
 } from "lucide-react";
 
 function CountStepper({
@@ -57,6 +60,8 @@ interface QuizSummary {
   created_at: string;
   questionCount: number;
   bestScore: number | null;
+  is_exam_sim?: boolean;
+  time_limit_minutes?: number | null;
 }
 
 interface GradedResult {
@@ -65,6 +70,7 @@ interface GradedResult {
   correct: boolean;
   correctAnswer: string;
   topic: string;
+  feedback?: string;
 }
 
 interface AttemptResult {
@@ -75,15 +81,26 @@ interface AttemptResult {
   results: GradedResult[];
 }
 
+interface RubricInfo {
+  id: string;
+  file_name: string;
+  uploaded_at: string;
+}
+
 export default function QuizzesTab({ courseId }: { courseId: string }) {
   const [view, setView] = useState<"list" | "taking" | "results">("list");
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [generatingExam, setGeneratingExam] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rubric, setRubric] = useState<RubricInfo | null>(null);
+  const [uploadingRubric, setUploadingRubric] = useState(false);
 
   const [questions, setQuestions] = useState<QuizQuestionPublic[]>([]);
   const [activeQuizId, setActiveQuizId] = useState<string | null>(null);
+  const [timeLimitMinutes, setTimeLimitMinutes] = useState<number | null>(null);
+  const [isExamSim, setIsExamSim] = useState(false);
   const [startingId, setStartingId] = useState<string | null>(null);
   const [result, setResult] = useState<AttemptResult | null>(null);
 
@@ -96,10 +113,14 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
     counts.multiple_choice + counts.true_false + counts.short_answer;
 
   const load = useCallback(async () => {
-    const { quizzes } = await apiFetch<{ quizzes: QuizSummary[] }>(
-      `/api/courses/${courseId}/quizzes`
-    );
+    const [{ quizzes }, rubricData] = await Promise.all([
+      apiFetch<{ quizzes: QuizSummary[] }>(`/api/courses/${courseId}/quizzes`),
+      apiFetch<{ rubric: RubricInfo | null }>(
+        `/api/courses/${courseId}/rubric`
+      ),
+    ]);
     setQuizzes(quizzes);
+    setRubric(rubricData.rubric);
     setLoading(false);
   }, [courseId]);
 
@@ -124,14 +145,44 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
     }
   }
 
-  async function startQuiz(quizId: string) {
+  async function generateExam() {
+    setGeneratingExam(true);
+    setError(null);
+    try {
+      const { quizId, timeLimitMinutes: limit } = await apiFetch<{
+        quizId: string;
+        timeLimitMinutes: number;
+      }>(`/api/courses/${courseId}/quizzes/generate-exam`, {
+        method: "POST",
+        body: JSON.stringify({ timeLimitMinutes: 45 }),
+      });
+      await load();
+      await startQuiz(quizId, limit, true);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Exam generation failed");
+    } finally {
+      setGeneratingExam(false);
+    }
+  }
+
+  async function startQuiz(
+    quizId: string,
+    limit?: number | null,
+    examSim?: boolean
+  ) {
     setStartingId(quizId);
     try {
       const { quiz } = await apiFetch<{
-        quiz: { questions: QuizQuestionPublic[] };
+        quiz: {
+          questions: QuizQuestionPublic[];
+          time_limit_minutes?: number | null;
+          is_exam_sim?: boolean;
+        };
       }>(`/api/quizzes/${quizId}`);
       setQuestions(quiz.questions);
       setActiveQuizId(quizId);
+      setTimeLimitMinutes(limit ?? quiz.time_limit_minutes ?? null);
+      setIsExamSim(examSim ?? Boolean(quiz.is_exam_sim));
       setResult(null);
       setView("taking");
     } finally {
@@ -142,7 +193,33 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
   async function deleteQuiz(quizId: string) {
     if (!confirm("Delete this quiz?")) return;
     setQuizzes((q) => q.filter((x) => x.id !== quizId));
-    await apiFetch(`/api/quizzes/${quizId}`, { method: "DELETE" }).catch(() => {});
+    await apiFetch(`/api/quizzes/${quizId}`, { method: "DELETE" }).catch(
+      () => {}
+    );
+  }
+
+  async function uploadRubric(file: File) {
+    setUploadingRubric(true);
+    setError(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const { rubric: r } = await apiFetch<{ rubric: RubricInfo }>(
+        `/api/courses/${courseId}/rubric`,
+        { method: "POST", body: form }
+      );
+      setRubric(r);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Rubric upload failed");
+    } finally {
+      setUploadingRubric(false);
+    }
+  }
+
+  async function removeRubric() {
+    if (!confirm("Remove the grading rubric?")) return;
+    await apiFetch(`/api/courses/${courseId}/rubric`, { method: "DELETE" });
+    setRubric(null);
   }
 
   if (loading) {
@@ -158,6 +235,8 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
       <TakeQuiz
         quizId={activeQuizId}
         questions={questions}
+        timeLimitMinutes={timeLimitMinutes}
+        isExamSim={isExamSim}
         onDone={(r) => {
           setResult(r);
           setView("results");
@@ -169,21 +248,101 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
   }
 
   if (view === "results" && result) {
-    return <Results result={result} onClose={() => setView("list")} />;
+    return (
+      <Results
+        result={result}
+        isExamSim={isExamSim}
+        onClose={() => setView("list")}
+      />
+    );
   }
 
   return (
-    <div className="p-8 max-w-3xl mx-auto">
-      <div className="mb-6">
-        <h2 className="text-lg font-semibold">Quizzes</h2>
-        <p className="text-sm text-slate-500">
-          Choose your question mix, then generate a quiz from your materials.
+    <div className="p-8 max-w-3xl mx-auto space-y-6">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
+        <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+          <FileText className="h-4 w-4 text-brand-600" />
+          Grading rubric
+        </h3>
+        <p className="text-sm text-slate-500 mt-1 mb-3">
+          Upload your syllabus or grading rubric (PDF, .txt, or .md). It stays
+          until you remove it and is used to grade short answers and tune
+          question difficulty.
         </p>
+        {rubric ? (
+          <div className="flex items-center justify-between rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-medium text-emerald-800">
+                {rubric.file_name}
+              </p>
+              <p className="text-xs text-emerald-700">
+                Uploaded {new Date(rubric.uploaded_at).toLocaleDateString()}
+              </p>
+            </div>
+            <button
+              onClick={removeRubric}
+              className="text-sm text-red-600 hover:underline"
+            >
+              Remove
+            </button>
+          </div>
+        ) : (
+          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 px-4 py-6 text-sm text-slate-500 hover:border-brand-300 hover:bg-brand-50/50">
+            <Upload className="h-4 w-4" />
+            {uploadingRubric ? "Uploading…" : "Upload rubric"}
+            <input
+              type="file"
+              accept=".pdf,.txt,.md,.markdown"
+              className="hidden"
+              disabled={uploadingRubric}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) uploadRubric(f);
+                e.target.value = "";
+              }}
+            />
+          </label>
+        )}
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 mb-6">
+      <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5">
+        <h3 className="font-semibold text-slate-800 flex items-center gap-2">
+          <Timer className="h-4 w-4 text-amber-600" />
+          Exam simulation
+        </h3>
+        <p className="text-sm text-slate-600 mt-1 mb-3">
+          Timed 45-minute exam focused on your weak topics
+          {rubric ? " using your rubric" : ""}. 15 questions (MCQ, T/F, short
+          answer).
+        </p>
+        <button
+          onClick={generateExam}
+          disabled={generatingExam}
+          className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+        >
+          {generatingExam ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Building exam…
+            </>
+          ) : (
+            <>
+              <Sparkles className="h-4 w-4" />
+              Start exam simulation
+            </>
+          )}
+        </button>
+        <ActivityProgress
+          active={generatingExam}
+          label="Building your exam simulation…"
+          estimateSeconds={ACTIVITY_ESTIMATES.quiz + 15}
+          hint="Prioritizing weak topics and exam-style questions."
+        />
+      </div>
+
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <p className="text-sm font-medium text-slate-700 mb-3">
-          Build a quiz
+          Practice quiz
         </p>
         <div className="grid sm:grid-cols-3 gap-3">
           <CountStepper
@@ -235,7 +394,7 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
       </div>
 
       {error && (
-        <p className="mb-4 text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+        <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
           {error}
         </p>
       )}
@@ -244,23 +403,38 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         <div className="rounded-2xl border-2 border-dashed border-slate-200 p-12 text-center">
           <ListChecks className="h-10 w-10 mx-auto text-slate-300" />
           <p className="mt-3 text-slate-500">
-            No quizzes yet. Generate one from your materials.
+            No quizzes yet. Generate a practice quiz or exam simulation.
           </p>
         </div>
       ) : (
         <div className="space-y-2">
+          <h3 className="text-sm font-semibold text-slate-600">Your quizzes</h3>
           {quizzes.map((q) => (
             <div
               key={q.id}
               className="group flex items-center gap-3 rounded-xl border border-slate-200 bg-white p-4 hover:shadow-sm"
             >
-              <div className="h-9 w-9 rounded-lg bg-brand-50 text-brand-600 flex items-center justify-center">
-                <ListChecks className="h-5 w-5" />
+              <div
+                className={cn(
+                  "h-9 w-9 rounded-lg flex items-center justify-center",
+                  q.is_exam_sim
+                    ? "bg-amber-50 text-amber-600"
+                    : "bg-brand-50 text-brand-600"
+                )}
+              >
+                {q.is_exam_sim ? (
+                  <Timer className="h-5 w-5" />
+                ) : (
+                  <ListChecks className="h-5 w-5" />
+                )}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="font-medium truncate">{q.title}</p>
                 <p className="text-xs text-slate-400">
                   {q.questionCount} questions
+                  {q.is_exam_sim && q.time_limit_minutes
+                    ? ` · ${q.time_limit_minutes} min`
+                    : ""}
                   {q.bestScore !== null && ` · best ${q.bestScore}%`}
                 </p>
               </div>
@@ -271,7 +445,9 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
                 <Trash2 className="h-4 w-4" />
               </button>
               <button
-                onClick={() => startQuiz(q.id)}
+                onClick={() =>
+                  startQuiz(q.id, q.time_limit_minutes, q.is_exam_sim)
+                }
                 disabled={startingId === q.id}
                 className="flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-60"
               >
@@ -294,22 +470,34 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
 function TakeQuiz({
   quizId,
   questions,
+  timeLimitMinutes,
+  isExamSim,
   onDone,
   onCancel,
 }: {
   quizId: string;
   questions: QuizQuestionPublic[];
+  timeLimitMinutes: number | null;
+  isExamSim: boolean;
   onDone: (r: AttemptResult) => void;
   onCancel: () => void;
 }) {
   const [i, setI] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
+  const [secondsLeft, setSecondsLeft] = useState<number | null>(
+    timeLimitMinutes ? timeLimitMinutes * 60 : null
+  );
+  const submittedRef = useRef(false);
+  const answersRef = useRef(answers);
+  answersRef.current = answers;
   const q = questions[i];
   const isLast = i === questions.length - 1;
   const current = answers[q.id] ?? "";
 
-  async function submit() {
+  const submit = useCallback(async () => {
+    if (submittedRef.current) return;
+    submittedRef.current = true;
     setSubmitting(true);
     try {
       const result = await apiFetch<AttemptResult>(
@@ -317,10 +505,12 @@ function TakeQuiz({
         {
           method: "POST",
           body: JSON.stringify({
-            answers: Object.entries(answers).map(([questionId, answer]) => ({
-              questionId,
-              answer,
-            })),
+            answers: Object.entries(answersRef.current).map(
+              ([questionId, answer]) => ({
+                questionId,
+                answer,
+              })
+            ),
           }),
         }
       );
@@ -328,7 +518,24 @@ function TakeQuiz({
     } finally {
       setSubmitting(false);
     }
-  }
+  }, [onDone, quizId]);
+
+  useEffect(() => {
+    if (!timeLimitMinutes) return;
+    const endAt = Date.now() + timeLimitMinutes * 60 * 1000;
+    const t = setInterval(() => {
+      const left = Math.max(0, Math.ceil((endAt - Date.now()) / 1000));
+      setSecondsLeft(left);
+      if (left <= 0) {
+        clearInterval(t);
+        void submit();
+      }
+    }, 1000);
+    return () => clearInterval(t);
+  }, [timeLimitMinutes, submit]);
+
+  const mins = secondsLeft !== null ? Math.floor(secondsLeft / 60) : 0;
+  const secs = secondsLeft !== null ? secondsLeft % 60 : 0;
 
   return (
     <div className="p-8 max-w-2xl mx-auto">
@@ -339,9 +546,22 @@ function TakeQuiz({
         >
           Cancel
         </button>
-        <span className="text-sm text-slate-500">
-          {i + 1} / {questions.length}
-        </span>
+        <div className="flex items-center gap-3 text-sm text-slate-500">
+          {isExamSim && secondsLeft !== null && (
+            <span
+              className={cn(
+                "font-mono font-semibold tabular-nums",
+                secondsLeft < 300 ? "text-red-600" : "text-slate-700"
+              )}
+            >
+              <Timer className="inline h-3.5 w-3.5 mr-1" />
+              {mins}:{secs.toString().padStart(2, "0")}
+            </span>
+          )}
+          <span>
+            {i + 1} / {questions.length}
+          </span>
+        </div>
       </div>
       <div className="h-2 bg-slate-200 rounded-full mb-6">
         <div
@@ -398,12 +618,12 @@ function TakeQuiz({
         </button>
         {isLast ? (
           <button
-            onClick={submit}
+            onClick={() => void submit()}
             disabled={submitting}
             className="flex items-center gap-2 rounded-lg bg-emerald-600 px-5 py-2 font-medium text-white hover:bg-emerald-700 disabled:opacity-60"
           >
             {submitting && <Loader2 className="h-4 w-4 animate-spin" />}
-            Submit quiz
+            Submit {isExamSim ? "exam" : "quiz"}
           </button>
         ) : (
           <button
@@ -420,9 +640,11 @@ function TakeQuiz({
 
 function Results({
   result,
+  isExamSim,
   onClose,
 }: {
   result: AttemptResult;
+  isExamSim: boolean;
   onClose: () => void;
 }) {
   const color =
@@ -436,7 +658,10 @@ function Results({
     <div className="p-8 max-w-2xl mx-auto">
       <div className="rounded-2xl border border-slate-200 bg-white p-8 text-center">
         <Trophy className="h-10 w-10 mx-auto text-amber-400" />
-        <p className={cn("text-5xl font-bold mt-3", color)}>{result.score}%</p>
+        <p className="text-sm text-slate-500 mt-2">
+          {isExamSim ? "Exam simulation" : "Quiz"} complete
+        </p>
+        <p className={cn("text-5xl font-bold mt-2", color)}>{result.score}%</p>
         <p className="text-slate-500 mt-1">
           {result.correctCount} of {result.total} correct
         </p>
@@ -502,6 +727,9 @@ function Results({
                 Correct answer: <b>{r.correctAnswer}</b>
               </p>
             )}
+            {r.feedback && (
+              <p className="text-slate-600 mt-1 italic">{r.feedback}</p>
+            )}
           </div>
         ))}
       </div>
@@ -510,7 +738,7 @@ function Results({
         onClick={onClose}
         className="mt-8 w-full rounded-lg bg-brand-600 px-4 py-2.5 font-medium text-white hover:bg-brand-700"
       >
-        Back to quizzes
+        Back to Quizzes and Exams
       </button>
     </div>
   );
