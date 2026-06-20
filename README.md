@@ -66,6 +66,7 @@ Create a free key at [aistudio.google.com/app/apikey](https://aistudio.google.co
 
 ### 4. Environment variables
 
+Create a new file `.env.local`
 Copy `.env.example` to `.env.local` and fill in:
 
 ```env
