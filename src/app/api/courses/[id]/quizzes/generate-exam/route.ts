@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handle, requireCourse, ApiError } from "@/lib/api";
+import { handle, requireCourse, ApiError, errorMessage } from "@/lib/api";
 import { generateQuizFromMaterials } from "@/lib/quiz-generate";
 import { computeExamReadiness } from "@/lib/exam-readiness";
 import { isMissingTable } from "@/lib/db-schema";
@@ -53,10 +53,8 @@ export async function POST(
       });
       return NextResponse.json({ ...result, timeLimitMinutes });
     } catch (err) {
-      throw new ApiError(
-        502,
-        err instanceof Error ? err.message : "Exam generation failed"
-      );
+      console.error("[generate-exam]", err);
+      throw new ApiError(502, errorMessage(err, "Exam generation failed"));
     }
   });
 }

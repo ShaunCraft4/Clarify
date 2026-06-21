@@ -56,6 +56,16 @@ export async function requireCourse(courseId: string) {
   return { supabase, user, course };
 }
 
+/** Readable message from Error, PostgREST, or unknown throws. */
+export function errorMessage(err: unknown, fallback: string): string {
+  if (err instanceof Error && err.message) return err.message;
+  if (err && typeof err === "object" && "message" in err) {
+    const msg = (err as { message: unknown }).message;
+    if (typeof msg === "string" && msg.trim()) return msg.trim();
+  }
+  return fallback;
+}
+
 /** Wrap a route handler, converting ApiError/exceptions into JSON responses. */
 export function handle(
   fn: () => Promise<NextResponse | Response>

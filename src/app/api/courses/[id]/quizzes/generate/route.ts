@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handle, requireCourse, ApiError } from "@/lib/api";
+import { handle, requireCourse, ApiError, errorMessage } from "@/lib/api";
 import { generateQuizFromMaterials } from "@/lib/quiz-generate";
 import { isMissingTable } from "@/lib/db-schema";
 
@@ -50,10 +50,7 @@ export async function POST(
       });
       return NextResponse.json(result);
     } catch (err) {
-      throw new ApiError(
-        502,
-        err instanceof Error ? err.message : "Generation failed"
-      );
+      throw new ApiError(502, errorMessage(err, "Generation failed"));
     }
   });
 }

@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireUser } from "@/lib/api";
+import { assignCourseEmoji } from "@/lib/course-emoji";
+import { isMissingColumn } from "@/lib/db-schema";
 
 export async function GET() {
   return handle(async () => {
@@ -31,6 +33,25 @@ export async function POST(req: NextRequest) {
       .select("*")
       .single();
     if (error) throw error;
-    return NextResponse.json({ course: data }, { status: 201 });
+
+    let emoji: string | null = null;
+    try {
+      emoji = await assignCourseEmoji(supabase, data.id, name);
+    } catch (err) {
+      if (
+        !(
+          err &&
+          typeof err === "object" &&
+          isMissingColumn(err as { code?: string; message?: string })
+        )
+      ) {
+        throw err;
+      }
+    }
+
+    return NextResponse.json(
+      { course: { ...data, emoji: emoji ?? data.emoji ?? null } },
+      { status: 201 }
+    );
   });
 }

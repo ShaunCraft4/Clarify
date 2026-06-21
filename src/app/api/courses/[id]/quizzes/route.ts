@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse } from "@/lib/api";
-import { isMissingColumn } from "@/lib/db-schema";
+import { isMissingColumn, isExamSimTitle } from "@/lib/db-schema";
 
 export async function GET(
   _req: NextRequest,
@@ -47,14 +47,24 @@ export async function GET(
     }
 
     return NextResponse.json({
-      quizzes: (quizzes ?? []).map((q) => ({
-        ...q,
-        is_exam_sim: "is_exam_sim" in q ? Boolean(q.is_exam_sim) : false,
-        time_limit_minutes:
-          "time_limit_minutes" in q ? q.time_limit_minutes : null,
-        questionCount: counts[q.id] ?? 0,
-        bestScore: attempts[q.id] ?? null,
-      })),
+      quizzes: (quizzes ?? []).map((q) => {
+        const examSim =
+          "is_exam_sim" in q
+            ? Boolean(q.is_exam_sim)
+            : isExamSimTitle(q.title);
+        return {
+          ...q,
+          is_exam_sim: examSim,
+          time_limit_minutes:
+            "time_limit_minutes" in q
+              ? q.time_limit_minutes
+              : examSim
+                ? 45
+                : null,
+          questionCount: counts[q.id] ?? 0,
+          bestScore: attempts[q.id] ?? null,
+        };
+      }),
     });
   });
 }

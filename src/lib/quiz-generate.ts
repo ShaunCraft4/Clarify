@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { generateJSON } from "@/lib/ai/gemini";
+import { errorMessage } from "@/lib/api";
 import { gatherCourseContent } from "@/lib/content";
 import { isMissingColumn } from "@/lib/db-schema";
 import type { QuestionType } from "@/lib/types";
@@ -107,6 +108,73 @@ async function generateBatch(
     .filter((q): q is GeneratedQuestion => q !== null);
 }
 
+type QuestionCounts = GenerateQuizParams["counts"];
+
+/** Split large quizzes into smaller API calls so JSON responses don't truncate. */
+function splitCountsIntoBatches(
+  counts: QuestionCounts,
+  maxPerBatch: number
+): QuestionCounts[] {
+  const remaining = { ...counts };
+  const batches: QuestionCounts[] = [];
+  const types: (keyof QuestionCounts)[] = [
+    "multiple_choice",
+    "true_false",
+    "short_answer",
+  ];
+
+  while (
+    remaining.multiple_choice +
+      remaining.true_false +
+      remaining.short_answer >
+    0
+  ) {
+    const batch: QuestionCounts = {
+      multiple_choice: 0,
+      true_false: 0,
+      short_answer: 0,
+    };
+    let batchTotal = 0;
+
+    for (const type of types) {
+      while (remaining[type] > 0 && batchTotal < maxPerBatch) {
+        batch[type]++;
+        remaining[type]--;
+        batchTotal++;
+      }
+    }
+
+    batches.push(batch);
+  }
+
+  return batches;
+}
+
+async function generateAllBatches(
+  counts: QuestionCounts,
+  content: string,
+  extras: { examBlock: string; focusBlock: string; rubricBlock: string }
+): Promise<GeneratedQuestion[]> {
+  const total =
+    counts.multiple_choice + counts.true_false + counts.short_answer;
+  const batches =
+    total > 5 ? splitCountsIntoBatches(counts, 5) : [counts];
+
+  const valid: GeneratedQuestion[] = [];
+  for (const batchCounts of batches) {
+    const batchTotal =
+      batchCounts.multiple_choice +
+      batchCounts.true_false +
+      batchCounts.short_answer;
+    if (batchTotal === 0) continue;
+    const batch = await generateBatch(
+      buildPromptParts(batchCounts, content, extras)
+    );
+    valid.push(...batch);
+  }
+  return valid;
+}
+
 export async function generateQuizFromMaterials(
   params: GenerateQuizParams
 ): Promise<{ quizId: string; count: number }> {
@@ -144,32 +212,7 @@ export async function generateQuizFromMaterials(
     : "";
 
   const extras = { examBlock, focusBlock, rubricBlock };
-  let valid: GeneratedQuestion[] = [];
-
-  // Large exams are generated in two batches to avoid truncated JSON.
-  if (isExamSim && total > 8) {
-    const choiceCounts = {
-      multiple_choice: counts.multiple_choice,
-      true_false: counts.true_false,
-      short_answer: 0,
-    };
-    const writtenCounts = {
-      multiple_choice: 0,
-      true_false: 0,
-      short_answer: counts.short_answer,
-    };
-    const batch1 =
-      choiceCounts.multiple_choice + choiceCounts.true_false > 0
-        ? await generateBatch(buildPromptParts(choiceCounts, content, extras))
-        : [];
-    const batch2 =
-      writtenCounts.short_answer > 0
-        ? await generateBatch(buildPromptParts(writtenCounts, content, extras))
-        : [];
-    valid = [...batch1, ...batch2];
-  } else {
-    valid = await generateBatch(buildPromptParts(counts, content, extras));
-  }
+  const valid = await generateAllBatches(counts, content, extras);
 
   const minRequired = Math.max(3, Math.ceil(total * 0.5));
   if (valid.length < minRequired) {
@@ -206,7 +249,9 @@ export async function generateQuizFromMaterials(
       .select("*")
       .single());
   }
-  if (quizErr) throw quizErr;
+  if (quizErr) {
+    throw new Error(errorMessage(quizErr, "Failed to save quiz"));
+  }
 
   const rows = valid.slice(0, total).map((q, idx) => ({
     quiz_id: quiz.id,
@@ -225,7 +270,9 @@ export async function generateQuizFromMaterials(
   }));
 
   const { error: qErr } = await supabase.from("quiz_questions").insert(rows);
-  if (qErr) throw qErr;
+  if (qErr) {
+    throw new Error(errorMessage(qErr, "Failed to save quiz questions"));
+  }
 
   return { quizId: quiz.id, count: rows.length };
 }

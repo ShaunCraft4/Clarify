@@ -13,6 +13,7 @@ export interface Course {
   user_id: string;
   name: string;
   description: string | null;
+  emoji?: string | null;
   created_at: string;
 }
 

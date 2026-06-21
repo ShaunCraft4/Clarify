@@ -8,20 +8,20 @@ The core differentiator: Clarify doesn't just answer questions about documents. 
 
 ## Self-hosting (read this first)
 
-Clarify is designed to be **run by each person on their own machine** (or their own Supabase + Vercel project). Every installation uses **your own** credentials:
+Clarify is designed to be **run locally on your own machine**. Every installation uses **your own** credentials:
 
 - **Your** Supabase project (database, auth, file storage)
 - **Your** Google AI Studio API key (Gemini + embeddings)
 
-You are **not** using the repo maintainer's API quota. Keys live in `.env.local` on the server — they are never committed to Git and are not shared between users unless you deliberately deploy one shared instance (not recommended).
+You are **not** using the repo maintainer's API quota. Keys live in `.env.local` on your machine — they are never committed to Git and are not shared with other users.
 
-> **Do not** publish a public demo with a single shared `GOOGLE_AI_API_KEY`. Free-tier limits are per Google project (~5 text requests/min, ~250/day). One key for many users will hit rate limits quickly. If you host for others, enable billing on your Google AI project and add your own usage controls.
+> **Do not** publish a public demo with a single shared `GOOGLE_AI_API_KEY`. Free-tier limits are per Google project (~5 text requests/min, ~250/day). One key for many users will hit rate limits quickly.
 
 ---
 
 ## Features
 
-- Email/password auth (Supabase Auth) with per-user data isolation (RLS)
+- Email/password auth (Supabase Auth) with **forgot password** (email reset link) and per-user data isolation (RLS)
 - Course management — create, rename, delete; each course has its own material library
 - Material upload pipeline: **Uploading → Extracting → Chunking → Embedding → Done** with live status
 - **OCR for scanned PDFs** via Gemini vision when no text layer is present
@@ -70,7 +70,55 @@ npm install
 2. In the **SQL Editor**, run the migrations in order:
    - [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) — core schema
    - [`supabase/migrations/0002_srs_rubric_exams.sql`](supabase/migrations/0002_srs_rubric_exams.sql) — spaced repetition, rubrics, exam simulations
+   - [`supabase/migrations/0003_course_emoji.sql`](supabase/migrations/0003_course_emoji.sql) — optional course emoji icons
 3. Under **Authentication → Providers**, email/password is enabled by default. For local testing you may want to disable **Confirm email** so new sign-ups log in immediately.
+4. Configure **auth URLs and email** for login and password reset — see [Auth & password reset](#auth--password-reset) below.
+
+### Auth & password reset
+
+Clarify’s login page includes **Forgot password?** Users enter their email, Supabase sends a reset link, and they set a new password at `/auth/reset-password`. **You do not handle resets manually** — Supabase Auth sends the email.
+
+Each self-hoster configures this **once** in their own Supabase project (same place as signup email).
+
+#### 1. Site URL
+
+Supabase → **Authentication → URL Configuration → Site URL**
+
+| Environment | Site URL |
+| --- | --- |
+| Local dev | `http://localhost:3000` |
+
+#### 2. Redirect URLs
+
+On the same page, add these to **Redirect URLs** (one per line):
+
+```text
+http://localhost:3000/auth/callback
+```
+
+Password reset links go through `/auth/callback` and then to `/auth/reset-password`. If this URL is missing, reset emails will fail or redirect to an error page.
+
+#### 3. Email delivery
+
+Supabase sends signup and password-reset emails for you.
+
+| Setup | Good for |
+| --- | --- |
+| **Supabase built-in email** (default) | Local testing, personal/small self-hosted installs |
+| **Custom SMTP** (Supabase → Authentication → Email → SMTP) | Optional — better deliverability if built-in email is unreliable |
+
+For custom SMTP, use a provider such as Resend, SendGrid, or Gmail app password. Without working email, **Forgot password** (and signup confirmation, if enabled) will not reach users.
+
+#### Flow (for reference)
+
+```
+User clicks "Forgot password?" → enters email
+  → Supabase sends reset link
+  → user clicks link → /auth/callback → /auth/reset-password
+  → user sets new password → dashboard
+```
+
+No extra env vars or Clarify code changes are required beyond normal Supabase setup.
 
 ### 3. Get a Google AI key
 
@@ -118,15 +166,6 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000), sign up, create a course, and upload a PDF.
 
-### 6. Production build (optional)
-
-```bash
-npm run build
-npm start
-```
-
-The upload pipeline runs as a background task in the request process. This works on a long-lived Node server. On purely serverless platforms, long PDF processing may be cut off after the response — consider a queue/worker for production at scale.
-
 ---
 
 ## How it works
@@ -170,8 +209,8 @@ The UI polls the material's `status` to show step-by-step progress.
 | Command | Description |
 | --- | --- |
 | `npm run dev` | Start development server |
-| `npm run build` | Production build |
-| `npm run start` | Run production server |
+| `npm run build` | Build the app (`npm start` to run locally after build) |
+| `npm run start` | Run the built app on localhost |
 | `npm run lint` | ESLint |
 | `npm run smoke` | Smoke test (needs Supabase env) |
 | `npm run smoke:ai` | AI usage/queue smoke test (needs `GOOGLE_AI_API_KEY`) |
@@ -218,6 +257,7 @@ src/
       courses/[id]/        # course workspace + tabs
     api/                   # all API routes
     login/  signup/        # auth pages
+    auth/                  # password-reset callback + reset form
   components/              # Sidebar, AuthForm, ActivityProgress, …
   lib/
     ai/                    # gemini, embeddings, chunking, rate-limit queue

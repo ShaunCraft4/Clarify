@@ -305,12 +305,12 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         )}
       </div>
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50/50 p-5">
+      <div className="rounded-2xl border border-slate-200 bg-white p-5">
         <h3 className="font-semibold text-slate-800 flex items-center gap-2">
-          <Timer className="h-4 w-4 text-amber-600" />
+          <Timer className="h-4 w-4 text-brand-600" />
           Exam simulation
         </h3>
-        <p className="text-sm text-slate-600 mt-1 mb-3">
+        <p className="text-sm text-slate-500 mt-1 mb-3">
           Timed 45-minute exam focused on your weak topics
           {rubric ? " using your rubric" : ""}. 15 questions (MCQ, T/F, short
           answer).
@@ -318,7 +318,7 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         <button
           onClick={generateExam}
           disabled={generatingExam}
-          className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2 font-medium text-white hover:bg-amber-700 disabled:opacity-60"
+          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700 disabled:opacity-60"
         >
           {generatingExam ? (
             <>
@@ -335,8 +335,8 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         <ActivityProgress
           active={generatingExam}
           label="Building your exam simulation…"
-          estimateSeconds={ACTIVITY_ESTIMATES.quiz + 15}
-          hint="Prioritizing weak topics and exam-style questions."
+          estimateSeconds={ACTIVITY_ESTIMATES.quiz + 35}
+          hint="Prioritizing weak topics across a few AI batches — this can take about a minute."
         />
       </div>
 

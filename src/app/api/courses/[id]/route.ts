@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { handle, requireCourse } from "@/lib/api";
+import { handle, requireCourse, ApiError } from "@/lib/api";
+import { assignCourseEmoji } from "@/lib/course-emoji";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export async function PATCH(
@@ -8,10 +9,16 @@ export async function PATCH(
 ) {
   return handle(async () => {
     const { id } = await params;
-    const { supabase } = await requireCourse(id);
+    const { supabase, course } = await requireCourse(id);
     const body = await req.json();
     const update: Record<string, unknown> = {};
-    if (typeof body.name === "string") update.name = body.name.trim();
+    let rename = false;
+    if (typeof body.name === "string") {
+      const name = body.name.trim();
+      if (!name) throw new ApiError(400, "Course name is required");
+      update.name = name;
+      rename = name !== course.name;
+    }
     if (typeof body.description === "string")
       update.description = body.description.trim() || null;
     const { data, error } = await supabase
@@ -21,6 +28,20 @@ export async function PATCH(
       .select("*")
       .single();
     if (error) throw error;
+
+    if (rename && typeof update.name === "string") {
+      try {
+        const emoji = await assignCourseEmoji(
+          supabase,
+          id,
+          update.name as string
+        );
+        return NextResponse.json({ course: { ...data, emoji } });
+      } catch {
+        // emoji column may be missing — return course without blocking rename
+      }
+    }
+
     return NextResponse.json({ course: data });
   });
 }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireUser, ApiError } from "@/lib/api";
-import { isMissingColumn } from "@/lib/db-schema";
+import { isMissingColumn, isExamSimTitle } from "@/lib/db-schema";
 
 /** Fetch a quiz with its questions — WITHOUT the correct answers. */
 export async function GET(
@@ -33,12 +33,29 @@ export async function GET(
       .order("position", { ascending: true });
     if (qErr) throw qErr;
 
+    const row = quiz as {
+      id: string;
+      course_id: string;
+      title: string;
+      created_at: string;
+      is_exam_sim?: boolean;
+      time_limit_minutes?: number | null;
+    };
+    const examSim =
+      row.is_exam_sim != null
+        ? Boolean(row.is_exam_sim)
+        : isExamSimTitle(row.title);
+
     return NextResponse.json({
       quiz: {
-        ...quiz,
-        is_exam_sim: "is_exam_sim" in quiz ? Boolean(quiz.is_exam_sim) : false,
+        ...row,
+        is_exam_sim: examSim,
         time_limit_minutes:
-          "time_limit_minutes" in quiz ? quiz.time_limit_minutes : null,
+          row.time_limit_minutes != null
+            ? row.time_limit_minutes
+            : examSim
+              ? 45
+              : null,
         questions,
       },
     });
