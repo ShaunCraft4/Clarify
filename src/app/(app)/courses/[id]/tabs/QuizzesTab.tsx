@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
+import { recordStudyActivity } from "@/lib/study-streak";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { QuizQuestionPublic, TopicBreakdown } from "@/lib/types";
 import { cn } from "@/lib/cn";
@@ -241,6 +242,7 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
           setResult(r);
           setView("results");
           load();
+          recordStudyActivity();
         }}
         onCancel={() => setView("list")}
       />

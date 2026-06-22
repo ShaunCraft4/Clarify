@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import Sidebar from "@/components/Sidebar";
 import NavigationProgress from "@/components/NavigationProgress";
+import AppProviders from "@/components/AppProviders";
 import type { Course } from "@/lib/types";
 
 export default async function AppLayout({
@@ -33,12 +34,14 @@ export default async function AppLayout({
   }
 
   return (
-    <div className="flex min-h-screen">
-      <Suspense>
-        <NavigationProgress />
-      </Suspense>
-      <Sidebar courses={courses} email={user.email ?? ""} />
-      <main className="flex-1 min-w-0">{children}</main>
-    </div>
+    <AppProviders>
+      <div className="flex min-h-screen">
+        <Suspense>
+          <NavigationProgress />
+        </Suspense>
+        <Sidebar courses={courses} email={user.email ?? ""} />
+        <main className="flex-1 min-w-0">{children}</main>
+      </div>
+    </AppProviders>
   );
 }

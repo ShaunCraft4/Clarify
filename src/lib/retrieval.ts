@@ -57,8 +57,9 @@ export function buildContext(chunks: RetrievedChunk[]) {
     materialId: c.material_id,
     materialName: c.materialName,
     page: c.metadata?.page,
+    chunkIndex: c.chunk_index,
     chunkId: c.id,
-    excerpt: c.content.slice(0, 280),
+    excerpt: c.content,
   }));
 
   return { context, citations };

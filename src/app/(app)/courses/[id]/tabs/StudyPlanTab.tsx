@@ -4,23 +4,35 @@ import { useEffect, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { StudyPlanDay } from "@/lib/types";
+import { studyPlanToIcs } from "@/lib/study-plan-ics";
+import { downloadTextFile } from "@/lib/flashcard-export";
+import { recordStudyActivity } from "@/lib/study-streak";
 import {
   CalendarDays,
   Loader2,
   CheckCircle2,
   BookOpen,
   Trash2,
+  Download,
 } from "lucide-react";
 
 interface SavedPlan {
   plan: StudyPlanDay[];
   examDate: string;
   hoursPerDay: number;
+  examTopics?: string;
 }
 
-export default function StudyPlanTab({ courseId }: { courseId: string }) {
+export default function StudyPlanTab({
+  courseId,
+  courseName = "Course",
+}: {
+  courseId: string;
+  courseName?: string;
+}) {
   const storageKey = `clarify:studyplan:${courseId}`;
   const [examDate, setExamDate] = useState("");
+  const [examTopics, setExamTopics] = useState("");
   const [hoursPerDay, setHoursPerDay] = useState(2);
   const [plan, setPlan] = useState<StudyPlanDay[] | null>(null);
   const [loading, setLoading] = useState(false);
@@ -39,6 +51,7 @@ export default function StudyPlanTab({ courseId }: { courseId: string }) {
           setPlan(saved.plan);
           setExamDate(saved.examDate);
           setHoursPerDay(saved.hoursPerDay);
+          setExamTopics(saved.examTopics ?? "");
         } else {
           localStorage.removeItem(storageKey);
         }
@@ -59,15 +72,21 @@ export default function StudyPlanTab({ courseId }: { courseId: string }) {
         `/api/courses/${courseId}/study-plan`,
         {
           method: "POST",
-          body: JSON.stringify({ examDate, hoursPerDay }),
+          body: JSON.stringify({ examDate, hoursPerDay, examTopics }),
         }
       );
       setPlan(plan);
+      recordStudyActivity();
       if (hydrated) {
         try {
           localStorage.setItem(
             storageKey,
-            JSON.stringify({ plan, examDate, hoursPerDay } satisfies SavedPlan)
+            JSON.stringify({
+              plan,
+              examDate,
+              hoursPerDay,
+              examTopics,
+            } satisfies SavedPlan)
           );
         } catch {
           /* ignore */
@@ -78,6 +97,12 @@ export default function StudyPlanTab({ courseId }: { courseId: string }) {
     } finally {
       setLoading(false);
     }
+  }
+
+  function downloadCalendar() {
+    if (!plan?.length) return;
+    const ics = studyPlanToIcs(plan, courseName, hoursPerDay);
+    downloadTextFile(ics, "study-plan.ics", "text/calendar;charset=utf-8");
   }
 
   function clearPlan() {
@@ -94,59 +119,79 @@ export default function StudyPlanTab({ courseId }: { courseId: string }) {
     <div className="p-8 max-w-4xl mx-auto">
       <h2 className="text-lg font-semibold mb-1">Personalized study plan</h2>
       <p className="text-sm text-slate-500 mb-6">
-        We&apos;ll prioritize your weakest topics from quiz results.
+        Built only from your uploaded materials. We prioritize weak topics from
+        quiz results when available.
       </p>
 
       <form
         onSubmit={generate}
-        className="flex flex-wrap items-end gap-4 rounded-xl border border-slate-200 bg-white p-5 mb-8"
+        className="space-y-4 rounded-xl border border-slate-200 bg-white p-5 mb-8"
       >
-        <div>
-          <label className="block text-sm font-medium text-slate-600 mb-1">
-            Exam date
-          </label>
-          <input
-            type="date"
-            required
-            min={today}
-            value={examDate}
-            onChange={(e) => setExamDate(e.target.value)}
-            className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
-          />
+        <div className="flex flex-wrap items-end gap-4">
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">
+              Exam date
+            </label>
+            <input
+              type="date"
+              required
+              min={today}
+              value={examDate}
+              onChange={(e) => setExamDate(e.target.value)}
+              className="rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-slate-600 mb-1">
+              Hours per day
+            </label>
+            <input
+              type="number"
+              min={0.5}
+              max={12}
+              step={0.5}
+              value={hoursPerDay}
+              onChange={(e) => setHoursPerDay(Number(e.target.value))}
+              className="w-28 rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+            />
+          </div>
+          <button
+            type="submit"
+            disabled={loading}
+            className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700 disabled:opacity-60"
+          >
+            {loading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <CalendarDays className="h-4 w-4" />
+            )}
+            Generate plan
+          </button>
         </div>
         <div>
           <label className="block text-sm font-medium text-slate-600 mb-1">
-            Hours per day
+            What&apos;s on the exam?{" "}
+            <span className="font-normal text-slate-400">(optional)</span>
           </label>
-          <input
-            type="number"
-            min={0.5}
-            max={12}
-            step={0.5}
-            value={hoursPerDay}
-            onChange={(e) => setHoursPerDay(Number(e.target.value))}
-            className="w-28 rounded-lg border border-slate-300 px-3 py-2 outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
+          <textarea
+            value={examTopics}
+            onChange={(e) => setExamTopics(e.target.value)}
+            placeholder="e.g. B-trees, red-black trees, splay trees — leave blank to study everything in your materials"
+            rows={2}
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-100"
           />
+          <p className="mt-1 text-xs text-slate-400">
+            Comma- or line-separated. Only topics that appear in your materials
+            will be included.
+          </p>
         </div>
-        <button
-          type="submit"
-          disabled={loading}
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2 font-medium text-white hover:bg-brand-700 disabled:opacity-60"
-        >
-          {loading ? (
-            <Loader2 className="h-4 w-4 animate-spin" />
-          ) : (
-            <CalendarDays className="h-4 w-4" />
-          )}
-          Generate plan
-        </button>
       </form>
 
       <ActivityProgress
         active={loading}
         label="Building your study plan…"
         estimateSeconds={ACTIVITY_ESTIMATES.studyPlan}
-        hint="Analyzing weak topics and scheduling daily tasks."
+        hint="Reading your materials and scheduling scoped topics only."
       />
 
       {error && (
@@ -160,13 +205,23 @@ export default function StudyPlanTab({ courseId }: { courseId: string }) {
           <h3 className="font-semibold text-slate-700">
             Your plan{examDate ? ` (exam ${examDate})` : ""}
           </h3>
-          <button
-            onClick={clearPlan}
-            className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
-          >
-            <Trash2 className="h-4 w-4" />
-            Clear plan
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={downloadCalendar}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <Download className="h-4 w-4" />
+              Download .ics
+            </button>
+            <button
+              onClick={clearPlan}
+              className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
+            >
+              <Trash2 className="h-4 w-4" />
+              Clear plan
+            </button>
+          </div>
         </div>
       )}
 

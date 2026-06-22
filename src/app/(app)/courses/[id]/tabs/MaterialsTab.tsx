@@ -68,15 +68,20 @@ function StatusBadge({ m }: { m: MaterialRow }) {
 export default function MaterialsTab({
   courseId,
   onGoToNotes,
+  highlightMaterialId,
+  onHighlightDone,
 }: {
   courseId: string;
   onGoToNotes?: () => void;
+  highlightMaterialId?: string | null;
+  onHighlightDone?: () => void;
 }) {
   const [materials, setMaterials] = useState<MaterialRow[]>([]);
   const [fileType, setFileType] = useState<FileType>("pdf");
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
   const load = useCallback(async () => {
     const { materials } = await apiFetch<{ materials: MaterialRow[] }>(
@@ -98,6 +103,15 @@ export default function MaterialsTab({
     const t = setInterval(load, 2000);
     return () => clearInterval(t);
   }, [materials, load]);
+
+  useEffect(() => {
+    if (!highlightMaterialId) return;
+    const el = rowRefs.current.get(highlightMaterialId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = setTimeout(() => onHighlightDone?.(), 3000);
+    return () => clearTimeout(t);
+  }, [highlightMaterialId, materials, onHighlightDone]);
 
   const upload = useCallback(
     async (files: FileList | File[]) => {
@@ -236,7 +250,16 @@ export default function MaterialsTab({
         {materials.map((m) => (
           <div
             key={m.id}
-            className="flex flex-wrap items-center gap-3 rounded-xl border border-slate-200 bg-white p-3"
+            ref={(el) => {
+              if (el) rowRefs.current.set(m.id, el);
+              else rowRefs.current.delete(m.id);
+            }}
+            className={cn(
+              "flex flex-wrap items-center gap-3 rounded-xl border bg-white p-3 transition-colors",
+              highlightMaterialId === m.id
+                ? "border-brand-400 ring-2 ring-brand-100 bg-brand-50/40"
+                : "border-slate-200"
+            )}
           >
             <div
               className={cn(

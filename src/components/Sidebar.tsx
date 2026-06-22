@@ -14,6 +14,11 @@ import {
   recordRecentCourse,
   togglePinnedCourse,
 } from "@/lib/sidebar-prefs";
+import {
+  getStudyStreak,
+  STUDY_STREAK_EVENT,
+  type StudyStreakState,
+} from "@/lib/study-streak";
 import type { Course } from "@/lib/types";
 import {
   BrainCircuit,
@@ -29,6 +34,7 @@ import {
   Layers,
   ListChecks,
   ArrowRight,
+  Flame,
 } from "lucide-react";
 
 type SidebarCourse = Pick<Course, "id" | "name" | "description" | "emoji">;
@@ -129,6 +135,11 @@ export default function Sidebar({
 
   const [summary, setSummary] = useState<SidebarSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [streak, setStreak] = useState<StudyStreakState>({
+    streak: 0,
+    lastStudyDate: null,
+  });
+  const [processingCount, setProcessingCount] = useState(0);
 
   const activeCourseId = useMemo(() => {
     const match = pathname.match(/^\/courses\/([^/]+)/);
@@ -149,6 +160,32 @@ export default function Sidebar({
     setRecent(getRecentCourses());
     setPrefsReady(true);
   }, []);
+
+  useEffect(() => {
+    setStreak(getStudyStreak());
+    function onStreak(e: Event) {
+      setStreak((e as CustomEvent<StudyStreakState>).detail);
+    }
+    window.addEventListener(STUDY_STREAK_EVENT, onStreak);
+    return () => window.removeEventListener(STUDY_STREAK_EVENT, onStreak);
+  }, []);
+
+  useEffect(() => {
+    function onProcessing(e: Event) {
+      const detail = (e as CustomEvent<{ courseId: string; processingCount: number }>)
+        .detail;
+      if (detail.courseId === activeCourseId) {
+        setProcessingCount(detail.processingCount);
+      }
+    }
+    window.addEventListener("clarify:material-processing", onProcessing);
+    return () =>
+      window.removeEventListener("clarify:material-processing", onProcessing);
+  }, [activeCourseId]);
+
+  useEffect(() => {
+    if (!activeCourseId) setProcessingCount(0);
+  }, [activeCourseId]);
 
   useEffect(() => {
     if (activeCourseId) {
@@ -343,6 +380,15 @@ export default function Sidebar({
           <BrainCircuit className="h-6 w-6" />
           Clarify
         </Link>
+        <div className="flex items-center justify-between rounded-lg bg-orange-50 border border-orange-100 px-3 py-2">
+          <span className="text-xs font-medium text-orange-800/80">
+            Study streak
+          </span>
+          <span className="flex items-center gap-1.5 text-sm font-bold text-orange-700">
+            {streak.streak}
+            <Flame className="h-4 w-4 text-orange-500" aria-hidden />
+          </span>
+        </div>
         <button
           type="button"
           onClick={() => setCreating(true)}
@@ -406,6 +452,15 @@ export default function Sidebar({
                   )}
                 </span>
               </div>
+              {processingCount > 0 && (
+                <div className="flex items-center gap-2 text-amber-700">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin shrink-0" />
+                  <span>
+                    <strong>{processingCount}</strong> file
+                    {processingCount === 1 ? "" : "s"} processing
+                  </span>
+                </div>
+              )}
             </div>
           ) : null}
         </div>

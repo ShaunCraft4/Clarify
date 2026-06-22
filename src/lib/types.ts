@@ -123,6 +123,7 @@ export interface Citation {
   materialId: string;
   materialName: string;
   page?: number;
+  chunkIndex?: number;
   chunkId: string;
   excerpt: string;
 }

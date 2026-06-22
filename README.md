@@ -109,6 +109,27 @@ Supabase sends signup and password-reset emails for you.
 
 For custom SMTP, use a provider such as Resend, SendGrid, or Gmail app password. Without working email, **Forgot password** (and signup confirmation, if enabled) will not reach users.
 
+#### 4. Branded emails (Clarify instead of Supabase)
+
+By default, reset emails say **Supabase Auth** and include a “powered by Supabase” footer.
+
+**Where:** Supabase → **Authentication → Emails** → **Templates** tab (not Project Settings).
+
+**Catch:** Supabase requires **custom SMTP** before templates are editable. If you see *“Set up custom SMTP to edit templates”*, go to the **SMTP Settings** tab first, connect a provider (Resend, Gmail, etc.), then return to **Templates**.
+
+After SMTP is on:
+
+1. Click **Reset password**
+2. Subject: `Reset your Clarify password`
+3. Paste HTML from [`supabase/email-templates/recovery.html`](supabase/email-templates/recovery.html)
+4. Set sender name to **Clarify** in SMTP settings
+
+Optional: **Confirm sign up** template using [`confirmation.html`](supabase/email-templates/confirmation.html).
+
+Step-by-step (including free Resend setup): [`supabase/email-templates/README.md`](supabase/email-templates/README.md).
+
+**No SMTP?** Forgot password still works — users just get Supabase’s default email. Branding is optional.
+
 #### Flow (for reference)
 
 ```

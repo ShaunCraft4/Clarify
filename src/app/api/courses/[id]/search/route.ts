@@ -221,17 +221,14 @@ export async function POST(
       "Search"
     );
 
-    const seen = new Set<string>();
-    const sources = [];
-    for (const c of chunks) {
-      if (seen.has(c.material_id)) continue;
-      seen.add(c.material_id);
-      sources.push({
-        materialId: c.material_id,
-        materialName: c.materialName,
-        excerpt: c.content.slice(0, 220),
-      });
-    }
+    const sources = chunks.map((c) => ({
+      materialId: c.material_id,
+      materialName: c.materialName,
+      chunkId: c.id,
+      chunkIndex: c.chunk_index,
+      page: c.metadata?.page,
+      excerpt: c.content,
+    }));
 
     return NextResponse.json({ notes, sources });
   });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { Flashcard } from "@/lib/types";
@@ -9,6 +9,11 @@ import {
   flashcardsToMarkdown,
   downloadTextFile,
 } from "@/lib/flashcard-export";
+import {
+  FLASHCARD_IMPORT_GUIDE,
+  detectImportFormat,
+} from "@/lib/flashcard-import";
+import { recordStudyActivity } from "@/lib/study-streak";
 import { cn } from "@/lib/cn";
 import {
   Sparkles,
@@ -23,6 +28,9 @@ import {
   Download,
   FileText,
   Clock,
+  Upload,
+  ChevronDown,
+  Info,
 } from "lucide-react";
 
 function isDue(dueAt: string | null | undefined): boolean {
@@ -37,6 +45,9 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [showImportGuide, setShowImportGuide] = useState(false);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
   const reviewCards = useMemo(() => {
     const due = cards.filter((c) => isDue(c.due_at));
@@ -67,10 +78,35 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
         body: JSON.stringify({ count: 12 }),
       });
       await load();
+      recordStudyActivity();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
     } finally {
       setGenerating(false);
+    }
+  }
+
+  async function importFile(file: File) {
+    setImporting(true);
+    setError(null);
+    try {
+      const content = await file.text();
+      const format = detectImportFormat(content);
+      if (!format) {
+        setError(
+          "Unrecognized format. Use Clarify Markdown or Anki CSV — see the import guide."
+        );
+        return;
+      }
+      await apiFetch(`/api/courses/${courseId}/flashcards/import`, {
+        method: "POST",
+        body: JSON.stringify({ content, format }),
+      });
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Import failed");
+    } finally {
+      setImporting(false);
     }
   }
 
@@ -119,6 +155,30 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => importInputRef.current?.click()}
+            disabled={importing}
+            className="flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60"
+          >
+            {importing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Upload className="h-4 w-4" />
+            )}
+            Import deck
+          </button>
+          <input
+            ref={importInputRef}
+            type="file"
+            accept=".csv,.md,.markdown,.txt"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void importFile(file);
+              e.target.value = "";
+            }}
+          />
           {cards.length > 0 && (
             <>
               <button
@@ -175,6 +235,30 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
           {error}
         </p>
       )}
+
+      <div className="mb-4 rounded-xl border border-slate-200 bg-white">
+        <button
+          type="button"
+          onClick={() => setShowImportGuide((s) => !s)}
+          className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-slate-600"
+        >
+          <span className="flex items-center gap-1.5">
+            <Info className="h-4 w-4 text-brand-600" />
+            Import format guide
+          </span>
+          <ChevronDown
+            className={cn(
+              "h-4 w-4 transition-transform",
+              showImportGuide && "rotate-180"
+            )}
+          />
+        </button>
+        {showImportGuide && (
+          <div className="px-4 pb-4 text-xs text-slate-600 whitespace-pre-wrap leading-relaxed border-t border-slate-100 pt-3">
+            {FLASHCARD_IMPORT_GUIDE}
+          </div>
+        )}
+      </div>
 
       <ActivityProgress
         active={generating}
@@ -281,6 +365,7 @@ function ReviewMode({
         }
       );
       onUpdate(flashcard);
+      recordStudyActivity();
       if (i >= cards.length - 1) onExit();
       else goTo(i + 1, "right");
     },

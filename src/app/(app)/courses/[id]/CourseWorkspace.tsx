@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import type { Course } from "@/lib/types";
 import { apiFetch } from "@/lib/fetcher";
 import { cn } from "@/lib/cn";
+import { useMaterialProcessingWatcher } from "@/hooks/useMaterialProcessingWatcher";
 import {
   FileText,
   MessageCircleQuestion,
@@ -48,6 +49,15 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
   const router = useRouter();
   const [course, setCourse] = useState(initialCourse);
   const [tab, setTab] = useState<TabId>("materials");
+  const [highlightMaterialId, setHighlightMaterialId] = useState<string | null>(
+    null
+  );
+  const [processingCount, setProcessingCount] = useState(0);
+  const handleProcessingChange = useCallback((count: number) => {
+    setProcessingCount(count);
+  }, []);
+
+  useMaterialProcessingWatcher(course.id, handleProcessingChange);
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(course.name);
   const [editDescription, setEditDescription] = useState(course.description ?? "");
@@ -59,6 +69,11 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
     setEditDescription(course.description ?? "");
     setEditError(null);
     setEditing(true);
+  }
+
+  function openMaterial(materialId: string) {
+    setHighlightMaterialId(materialId);
+    setTab("materials");
   }
 
   async function saveCourse(e: React.FormEvent) {
@@ -121,12 +136,14 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
           {TABS.map((t) => {
             const Icon = t.icon;
             const active = tab === t.id;
+            const showProcessingBadge =
+              t.id === "materials" && processingCount > 0;
             return (
               <button
                 key={t.id}
                 onClick={() => setTab(t.id)}
                 className={cn(
-                  "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap rounded-t-lg",
+                  "relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap rounded-t-lg",
                   active
                     ? "border-brand-600 text-brand-700"
                     : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-50"
@@ -134,6 +151,9 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
               >
                 <Icon className="h-4 w-4" />
                 {t.label}
+                {showProcessingBadge && (
+                  <span className="absolute top-1.5 right-1 h-2 w-2 rounded-full bg-amber-500" />
+                )}
               </button>
             );
           })}
@@ -146,7 +166,11 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
             tab === "ask" ? "flex h-full min-h-0 flex-col" : "hidden"
           }
         >
-          <AskTab courseId={course.id} courseName={course.name} />
+          <AskTab
+            courseId={course.id}
+            courseName={course.name}
+            onOpenMaterial={openMaterial}
+          />
         </div>
         {/* key forces a remount per tab so the fade-in plays on every switch */}
         <div key={tab} className={tab === "ask" ? "hidden" : "animate-tab-in"}>
@@ -154,14 +178,20 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
             <MaterialsTab
               courseId={course.id}
               onGoToNotes={() => setTab("notes")}
+              highlightMaterialId={highlightMaterialId}
+              onHighlightDone={() => setHighlightMaterialId(null)}
             />
           )}
-          {tab === "search" && <SearchTab courseId={course.id} />}
+          {tab === "search" && (
+            <SearchTab courseId={course.id} onOpenMaterial={openMaterial} />
+          )}
           {tab === "notes" && <NotesTab courseId={course.id} />}
           {tab === "flashcards" && <FlashcardsTab courseId={course.id} />}
           {tab === "quizzes" && <QuizzesTab courseId={course.id} />}
           {tab === "progress" && <ProgressTab courseId={course.id} />}
-          {tab === "plan" && <StudyPlanTab courseId={course.id} />}
+          {tab === "plan" && (
+            <StudyPlanTab courseId={course.id} courseName={course.name} />
+          )}
           {tab === "insights" && <InsightsTab courseId={course.id} />}
         </div>
       </div>

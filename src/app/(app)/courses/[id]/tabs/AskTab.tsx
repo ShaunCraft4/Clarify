@@ -6,7 +6,9 @@ import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/lib/fetcher";
 import type { Citation } from "@/lib/types";
 import { cn } from "@/lib/cn";
+import { recordStudyActivity } from "@/lib/study-streak";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
+import { CitationSource } from "@/components/CitationSource";
 import { Send, Loader2, FileText, MessageSquare, Trash2 } from "lucide-react";
 
 interface Message {
@@ -26,9 +28,11 @@ function AssistantText({ text }: { text: string }) {
 export default function AskTab({
   courseId,
   courseName,
+  onOpenMaterial,
 }: {
   courseId: string;
   courseName: string;
+  onOpenMaterial?: (materialId: string) => void;
 }) {
   const storageKey = `clarify:chat:${courseId}`;
   const [messages, setMessages] = useState<Message[]>([]);
@@ -78,6 +82,7 @@ export default function AskTab({
         ...m,
         { role: "assistant", content: answer, citations },
       ]);
+      recordStudyActivity();
     } catch (err) {
       setMessages((m) => [
         ...m,
@@ -176,14 +181,15 @@ export default function AskTab({
               {m.citations
                 ?.filter((c) => c.chunkId === openCitation)
                 .map((c) => (
-                  <div
-                    key={c.chunkId}
-                    className="mt-2 rounded-lg bg-slate-50 border border-slate-200 p-3 text-xs text-slate-600"
-                  >
-                    <p className="font-medium text-slate-700 mb-1">
-                      {c.materialName}
-                    </p>
-                    {c.excerpt}…
+                  <div key={c.chunkId} className="mt-2">
+                    <CitationSource
+                      materialId={c.materialId}
+                      materialName={c.materialName}
+                      excerpt={c.excerpt}
+                      page={c.page}
+                      chunkIndex={c.chunkIndex}
+                      onOpenMaterial={onOpenMaterial}
+                    />
                   </div>
                 ))}
             </div>

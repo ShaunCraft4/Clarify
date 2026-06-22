@@ -4,12 +4,17 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/lib/fetcher";
+import { recordStudyActivity } from "@/lib/study-streak";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
+import { CitationSource } from "@/components/CitationSource";
 import { Search, Loader2, FileText, BookOpen, ChevronDown } from "lucide-react";
 
 interface Source {
   materialId: string;
   materialName: string;
+  chunkId: string;
+  chunkIndex?: number;
+  page?: number;
   excerpt: string;
 }
 
@@ -19,7 +24,13 @@ interface SearchResult {
   empty?: boolean;
 }
 
-export default function SearchTab({ courseId }: { courseId: string }) {
+export default function SearchTab({
+  courseId,
+  onOpenMaterial,
+}: {
+  courseId: string;
+  onOpenMaterial?: (materialId: string) => void;
+}) {
   const [query, setQuery] = useState("");
   const [result, setResult] = useState<SearchResult | null>(null);
   const [loading, setLoading] = useState(false);
@@ -38,6 +49,7 @@ export default function SearchTab({ courseId }: { courseId: string }) {
         { method: "POST", body: JSON.stringify({ query }) }
       );
       setResult(res);
+      if (!res.empty) recordStudyActivity();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Search failed");
     } finally {
@@ -117,7 +129,10 @@ export default function SearchTab({ courseId }: { courseId: string }) {
                 onClick={() => setShowSources((s) => !s)}
                 className="flex w-full items-center justify-between px-4 py-3 text-sm font-medium text-slate-600"
               >
-                <span>Sources ({result.sources.length})</span>
+                <span className="flex items-center gap-1.5">
+                  <FileText className="h-4 w-4 text-brand-600" />
+                  Sources ({result.sources.length})
+                </span>
                 <ChevronDown
                   className={`h-4 w-4 transition-transform ${
                     showSources ? "rotate-180" : ""
@@ -127,18 +142,15 @@ export default function SearchTab({ courseId }: { courseId: string }) {
               {showSources && (
                 <div className="px-4 pb-4 space-y-2">
                   {result.sources.map((s) => (
-                    <div
-                      key={s.materialId}
-                      className="rounded-lg bg-slate-50 border border-slate-200 p-3"
-                    >
-                      <p className="flex items-center gap-1.5 text-sm font-medium text-slate-700">
-                        <FileText className="h-4 w-4 text-brand-600" />
-                        {s.materialName}
-                      </p>
-                      <p className="text-xs text-slate-500 mt-1">
-                        {s.excerpt}…
-                      </p>
-                    </div>
+                    <CitationSource
+                      key={s.chunkId}
+                      materialId={s.materialId}
+                      materialName={s.materialName}
+                      excerpt={s.excerpt}
+                      page={s.page}
+                      chunkIndex={s.chunkIndex}
+                      onOpenMaterial={onOpenMaterial}
+                    />
                   ))}
                 </div>
               )}

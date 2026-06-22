@@ -4,6 +4,7 @@ import { useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { apiFetch } from "@/lib/fetcher";
+import { recordStudyActivity } from "@/lib/study-streak";
 import TopicBuilder, {
   type TopicItem,
   emptyTopic,
@@ -51,6 +52,7 @@ export default function NotesTab({ courseId }: { courseId: string }) {
         body: JSON.stringify({ topics: clean, useMaterials }),
       });
       setResult(res);
+      recordStudyActivity();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not generate notes");
     } finally {
