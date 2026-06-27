@@ -248,6 +248,73 @@ export function scoreChunkForTopic(
   return score;
 }
 
+/** Count phrase occurrences across text (case-insensitive). */
+function countPhraseOccurrences(text: string, topic: string): number {
+  let total = 0;
+  for (const phrase of topicPhrases(topic)) {
+    const re = new RegExp(escapeRegex(phrase), "gi");
+    total += text.match(re)?.length ?? 0;
+  }
+  return total;
+}
+
+/**
+ * True when retrieved chunks substantively cover the topic — not a one-line comparison
+ * (e.g. "like AVL trees" inside a splay-tree handout).
+ */
+export function hasSubstantiveTopicCoverage(
+  chunks: TopicScorableChunk[],
+  query: string
+): boolean {
+  const topic = extractTopic(query) || query;
+  const keywords = topicKeywords(query);
+  const distinctive = distinctiveKeywords(query);
+
+  const scored = chunks
+    .map((chunk) => ({
+      chunk,
+      topicScore: scoreChunkForTopic(
+        chunk.content,
+        chunk.materialName,
+        topic,
+        keywords
+      ),
+    }))
+    .filter((s) => s.topicScore >= 5)
+    .sort((a, b) => b.topicScore - a.topicScore);
+
+  if (scored.length === 0) return false;
+
+  if (
+    scored.some((s) =>
+      topicPhrases(topic).some((p) => containsTerm(s.chunk.materialName, p))
+    )
+  ) {
+    return true;
+  }
+
+  const haystack = scored.map((s) => s.chunk.content).join("\n");
+  const phraseOccurrences = countPhraseOccurrences(haystack, topic);
+  const distinctHits = distinctive.filter((kw) =>
+    scored.some(
+      (s) =>
+        containsTerm(s.chunk.content, kw) ||
+        containsTerm(s.chunk.materialName, kw)
+    )
+  ).length;
+
+  const topScore = scored[0].topicScore;
+  const secondScore = scored[1]?.topicScore ?? 0;
+
+  if (topScore >= 20) return true;
+  if (phraseOccurrences >= 2 && distinctHits >= 1) return true;
+  if (distinctHits >= distinctive.length && distinctive.length >= 2) return true;
+  if (topScore >= 17 && secondScore >= 8) return true;
+
+  // Single passing mention (e.g. "unlike AVL trees…") — not substantive.
+  return false;
+}
+
 /** Re-rank retrieved chunks and drop unrelated materials when possible. */
 export function rerankAndFilterTopicChunks<T extends TopicScorableChunk>(
   chunks: T[],
@@ -274,12 +341,12 @@ export function rerankAndFilterTopicChunks<T extends TopicScorableChunk>(
     .sort((a, b) => b.combined - a.combined);
 
   const relevant = scored.filter((s) => s.topicScore >= 5);
-  const pool =
-    relevant.length >= 2
-      ? relevant
-      : relevant.length === 1
-        ? relevant
-        : scored;
 
-  return pool.map((s) => ({ ...s.chunk, similarity: s.combined }));
+  // No fallback to unrelated chunks — empty means "not in materials".
+  if (relevant.length === 0) return [];
+  if (!hasSubstantiveTopicCoverage(relevant.map((s) => s.chunk), query)) {
+    return [];
+  }
+
+  return relevant.map((s) => ({ ...s.chunk, similarity: s.combined }));
 }

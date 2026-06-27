@@ -1,7 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { apiFetch } from "@/lib/fetcher";
+import { useMemo } from "react";
 import {
   BarChart,
   Bar,
@@ -16,38 +15,7 @@ import {
 } from "recharts";
 import { Loader2, Target } from "lucide-react";
 import { cn } from "@/lib/cn";
-
-interface MasteryRow {
-  topic: string;
-  mastery_score: number;
-  attempts_count: number;
-}
-interface AttemptRow {
-  score: number;
-  completed_at: string;
-}
-interface ProgressData {
-  mastery: MasteryRow[];
-  attempts: AttemptRow[];
-  stats: {
-    quizzesCompleted: number;
-    flashcardsTotal: number;
-    flashcardsMastered: number;
-    topicsTracked: number;
-  };
-}
-
-interface ExamReadiness {
-  score: number;
-  breakdown: {
-    mastery: number;
-    quizTrend: number;
-    flashcards: number;
-    coverage: number;
-  };
-  weakTopics: string[];
-  summary: string;
-}
+import { useCourseProgress } from "@/hooks/useCourseProgress";
 
 function masteryColor(score: number) {
   if (score >= 0.8) return "#10b981";
@@ -56,41 +24,33 @@ function masteryColor(score: number) {
 }
 
 export default function ProgressTab({ courseId }: { courseId: string }) {
-  const [data, setData] = useState<ProgressData | null>(null);
-  const [readiness, setReadiness] = useState<ExamReadiness | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { progress: data, readiness, isLoading } = useCourseProgress(courseId);
 
-  const load = useCallback(async () => {
-    const [d, r] = await Promise.all([
-      apiFetch<ProgressData>(`/api/courses/${courseId}/progress`),
-      apiFetch<ExamReadiness>(`/api/courses/${courseId}/exam-readiness`),
-    ]);
-    setData(d);
-    setReadiness(r);
-    setLoading(false);
-  }, [courseId]);
+  const chartData = useMemo(
+    () =>
+      (data?.mastery ?? []).map((m) => ({
+        topic: m.topic.length > 18 ? m.topic.slice(0, 17) + "…" : m.topic,
+        score: Math.round(m.mastery_score * 100),
+      })),
+    [data?.mastery]
+  );
 
-  useEffect(() => {
-    load();
-  }, [load]);
+  const lineData = useMemo(
+    () =>
+      (data?.attempts ?? []).map((a, i) => ({
+        name: `#${i + 1}`,
+        score: a.score,
+      })),
+    [data?.attempts]
+  );
 
-  if (loading || !data) {
+  if (isLoading || !data) {
     return (
       <div className="flex items-center justify-center h-full text-slate-400">
         <Loader2 className="h-6 w-6 animate-spin" />
       </div>
     );
   }
-
-  const chartData = data.mastery.map((m) => ({
-    topic: m.topic.length > 18 ? m.topic.slice(0, 17) + "…" : m.topic,
-    score: Math.round(m.mastery_score * 100),
-  }));
-
-  const lineData = data.attempts.map((a, i) => ({
-    name: `#${i + 1}`,
-    score: a.score,
-  }));
 
   const readinessColor =
     (readiness?.score ?? 0) >= 80

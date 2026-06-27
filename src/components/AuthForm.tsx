@@ -22,6 +22,16 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
 
   const isSignup = mode === "signup";
 
+  function authErrorMessage(err: unknown): string {
+    if (err && typeof err === "object") {
+      const e = err as { message?: string; msg?: string; code?: string };
+      if (e.message) return e.message;
+      if (e.msg) return e.msg;
+      if (e.code) return `Auth error: ${e.code}`;
+    }
+    return "Something went wrong";
+  }
+
   async function onForgotPassword(e: React.FormEvent) {
     e.preventDefault();
     if (!email.trim()) {
@@ -43,7 +53,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
         "If an account exists for that email, we sent a password reset link. Check your inbox (and spam folder)."
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not send reset email");
+      setError(authErrorMessage(err) || "Could not send reset email");
     } finally {
       setResetLoading(false);
     }
@@ -61,7 +71,10 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
           email,
           password,
         });
-        if (error) throw error;
+        if (error) {
+          setError(authErrorMessage(error));
+          return;
+        }
         if (data.session) {
           router.push("/dashboard");
           router.refresh();
@@ -80,7 +93,7 @@ export default function AuthForm({ mode }: { mode: "login" | "signup" }) {
         router.refresh();
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong");
+      setError(authErrorMessage(err));
     } finally {
       setLoading(false);
     }

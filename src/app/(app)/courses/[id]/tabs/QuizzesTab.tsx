@@ -2,8 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
+import { invalidateCourseCache } from "@/lib/course-cache";
+import {
+  useCourseQuizzes,
+  type QuizSummary,
+  type RubricInfo,
+} from "@/hooks/useCourseQuizzes";
 import { recordStudyActivity } from "@/lib/study-streak";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
+import TopicBuilder, {
+  emptyTopic,
+  type TopicItem,
+} from "@/components/TopicBuilder";
 import type { QuizQuestionPublic, TopicBreakdown } from "@/lib/types";
 import { cn } from "@/lib/cn";
 import {
@@ -55,16 +65,6 @@ function CountStepper({
   );
 }
 
-interface QuizSummary {
-  id: string;
-  title: string;
-  created_at: string;
-  questionCount: number;
-  bestScore: number | null;
-  is_exam_sim?: boolean;
-  time_limit_minutes?: number | null;
-}
-
 interface GradedResult {
   questionId: string;
   answer: string;
@@ -82,20 +82,13 @@ interface AttemptResult {
   results: GradedResult[];
 }
 
-interface RubricInfo {
-  id: string;
-  file_name: string;
-  uploaded_at: string;
-}
-
 export default function QuizzesTab({ courseId }: { courseId: string }) {
+  const { quizzes, rubric, isLoading, refresh, setRubric } =
+    useCourseQuizzes(courseId);
   const [view, setView] = useState<"list" | "taking" | "results">("list");
-  const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
-  const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [generatingExam, setGeneratingExam] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [rubric, setRubric] = useState<RubricInfo | null>(null);
   const [uploadingRubric, setUploadingRubric] = useState(false);
 
   const [questions, setQuestions] = useState<QuizQuestionPublic[]>([]);
@@ -110,34 +103,33 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
     true_false: 2,
     short_answer: 2,
   });
+  const [topics, setTopics] = useState<TopicItem[]>([emptyTopic()]);
   const total =
     counts.multiple_choice + counts.true_false + counts.short_answer;
 
-  const load = useCallback(async () => {
-    const [{ quizzes }, rubricData] = await Promise.all([
-      apiFetch<{ quizzes: QuizSummary[] }>(`/api/courses/${courseId}/quizzes`),
-      apiFetch<{ rubric: RubricInfo | null }>(
-        `/api/courses/${courseId}/rubric`
-      ),
-    ]);
-    setQuizzes(quizzes);
-    setRubric(rubricData.rubric);
-    setLoading(false);
-  }, [courseId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
+  function cleanTopics() {
+    return topics
+      .map((t) => ({ ...t, title: t.title.trim() }))
+      .filter((t) => t.title);
+  }
 
   async function generate() {
     setGenerating(true);
     setError(null);
+    const focusTopics = cleanTopics();
     try {
       const { quizId } = await apiFetch<{ quizId: string }>(
         `/api/courses/${courseId}/quizzes/generate`,
-        { method: "POST", body: JSON.stringify({ counts }) }
+        {
+          method: "POST",
+          body: JSON.stringify({
+            counts,
+            ...(focusTopics.length > 0 ? { topics: focusTopics } : {}),
+          }),
+        }
       );
-      await load();
+      invalidateCourseCache(courseId, "quizzes");
+      await refresh();
       await startQuiz(quizId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -157,7 +149,8 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         method: "POST",
         body: JSON.stringify({ timeLimitMinutes: 45 }),
       });
-      await load();
+      invalidateCourseCache(courseId, "quizzes");
+      await refresh();
       await startQuiz(quizId, limit, true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Exam generation failed");
@@ -193,10 +186,11 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
 
   async function deleteQuiz(quizId: string) {
     if (!confirm("Delete this quiz?")) return;
-    setQuizzes((q) => q.filter((x) => x.id !== quizId));
     await apiFetch(`/api/quizzes/${quizId}`, { method: "DELETE" }).catch(
       () => {}
     );
+    invalidateCourseCache(courseId, "quizzes");
+    await refresh();
   }
 
   async function uploadRubric(file: File) {
@@ -210,6 +204,7 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         { method: "POST", body: form }
       );
       setRubric(r);
+      invalidateCourseCache(courseId, "rubric", "quizzes");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Rubric upload failed");
     } finally {
@@ -221,9 +216,10 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
     if (!confirm("Remove the grading rubric?")) return;
     await apiFetch(`/api/courses/${courseId}/rubric`, { method: "DELETE" });
     setRubric(null);
+    invalidateCourseCache(courseId, "rubric");
   }
 
-  if (loading) {
+  if (isLoading && quizzes.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-slate-400">
         <Loader2 className="h-6 w-6 animate-spin" />
@@ -241,7 +237,8 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         onDone={(r) => {
           setResult(r);
           setView("results");
-          load();
+          void refresh();
+          invalidateCourseCache(courseId, "quizzes", "progress");
           recordStudyActivity();
         }}
         onCancel={() => setView("list")}
@@ -342,10 +339,19 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
         />
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5">
-        <p className="text-sm font-medium text-slate-700 mb-3">
-          Practice quiz
-        </p>
+      <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-4">
+        <div>
+          <p className="text-sm font-medium text-slate-700">
+            Practice quiz
+          </p>
+          <p className="text-sm text-slate-500 mt-1">
+            Optional: pick topics (same as Notes) to quiz yourself on specific
+            areas. Leave blank to draw from all uploaded materials.
+          </p>
+        </div>
+
+        <TopicBuilder topics={topics} onChange={setTopics} />
+
         <div className="grid sm:grid-cols-3 gap-3">
           <CountStepper
             label="Multiple choice"
@@ -391,7 +397,11 @@ export default function QuizzesTab({ courseId }: { courseId: string }) {
           active={generating}
           label="Generating your quiz…"
           estimateSeconds={ACTIVITY_ESTIMATES.quiz}
-          hint={`Creating ${total} questions from your course materials.`}
+          hint={
+            cleanTopics().length > 0
+              ? `Creating ${total} questions focused on your selected topics.`
+              : `Creating ${total} questions from your course materials.`
+          }
         />
       </div>
 

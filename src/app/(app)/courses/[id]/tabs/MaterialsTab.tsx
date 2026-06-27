@@ -2,7 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
-import type { FileType, Material } from "@/lib/types";
+import { invalidateCourseCache } from "@/lib/course-cache";
+import { useCourseMaterials, type MaterialRow } from "@/hooks/useCourseMaterials";
+import type { FileType } from "@/lib/types";
 import {
   Upload,
   FileText,
@@ -14,19 +16,6 @@ import {
   NotebookPen,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
-
-type MaterialRow = Pick<
-  Material,
-  | "id"
-  | "course_id"
-  | "file_name"
-  | "file_type"
-  | "status"
-  | "error"
-  | "chunk_count"
-  | "uploaded_at"
-  | "storage_path"
->;
 
 const isGenerated = (m: MaterialRow) => m.storage_path === null;
 
@@ -76,33 +65,12 @@ export default function MaterialsTab({
   highlightMaterialId?: string | null;
   onHighlightDone?: () => void;
 }) {
-  const [materials, setMaterials] = useState<MaterialRow[]>([]);
+  const { materials, isLoading, refresh } = useCourseMaterials(courseId);
   const [fileType, setFileType] = useState<FileType>("pdf");
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-
-  const load = useCallback(async () => {
-    const { materials } = await apiFetch<{ materials: MaterialRow[] }>(
-      `/api/courses/${courseId}/materials`
-    );
-    setMaterials(materials);
-  }, [courseId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
-  // Poll while anything is still processing.
-  useEffect(() => {
-    const processing = materials.some(
-      (m) => m.status !== "done" && m.status !== "error"
-    );
-    if (!processing) return;
-    const t = setInterval(load, 2000);
-    return () => clearInterval(t);
-  }, [materials, load]);
 
   useEffect(() => {
     if (!highlightMaterialId) return;
@@ -131,16 +99,25 @@ export default function MaterialsTab({
           );
         }
       }
-      await load();
+      invalidateCourseCache(courseId, "materials");
+      await refresh();
     },
-    [courseId, fileType, load]
+    [courseId, fileType, refresh]
   );
 
   async function remove(id: string) {
     if (!confirm("Delete this material and its chunks?")) return;
-    setMaterials((m) => m.filter((x) => x.id !== id));
     await apiFetch(`/api/materials/${id}`, { method: "DELETE" }).catch(() => {});
-    load();
+    invalidateCourseCache(courseId, "materials");
+    await refresh();
+  }
+
+  if (isLoading && materials.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64 text-slate-400">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </div>
+    );
   }
 
   return (

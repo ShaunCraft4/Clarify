@@ -5,6 +5,28 @@ import { isMissingTable } from "@/lib/db-schema";
 
 export const maxDuration = 60;
 
+interface TopicInput {
+  title?: string;
+  subtopics?: unknown;
+}
+
+function parseFocusTopics(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((t: TopicInput) => {
+      const title = String(t.title ?? "").trim();
+      if (!title) return null;
+      const subtopics = Array.isArray(t.subtopics)
+        ? t.subtopics.map((s) => String(s).trim()).filter(Boolean)
+        : [];
+      return subtopics.length > 0
+        ? `${title} (${subtopics.join(", ")})`
+        : title;
+    })
+    .filter((t): t is string => Boolean(t))
+    .slice(0, 8);
+}
+
 export async function POST(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -39,6 +61,8 @@ export async function POST(
     const rubricText =
       rubricErr && isMissingTable(rubricErr) ? null : rubric?.extracted_text;
 
+    const focusTopics = parseFocusTopics(body.topics);
+
     try {
       const result = await generateQuizFromMaterials({
         supabase,
@@ -47,6 +71,7 @@ export async function POST(
         courseName: course.name,
         counts,
         rubricText: rubricText,
+        focusTopics: focusTopics.length > 0 ? focusTopics : undefined,
       });
       return NextResponse.json(result);
     } catch (err) {

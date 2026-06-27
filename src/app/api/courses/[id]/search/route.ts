@@ -171,32 +171,22 @@ export async function POST(
       );
       chunks = dedupeChunks([...chunks, ...keywordHits]);
 
-      if (chunks.length < 2) {
-        const sample = await fetchRepresentativeChunks(
-          supabase,
-          id,
-          maxChunks * 2
-        );
-        chunks = sample
-          .map((c) => ({
-            ...c,
-            similarity: scoreChunkForTopic(
-              c.content,
-              c.materialName,
-              topic || searchText
-            ),
-          }))
-          .filter((c) => c.similarity >= 5)
-          .sort((a, b) => b.similarity - a.similarity);
-      }
-
       chunks = rerankAndFilterTopicChunks(chunks, query);
     }
 
     chunks = capContext(chunks, maxChunks, maxContext);
 
     if (chunks.length === 0) {
-      return NextResponse.json({ notes: "", sources: [], empty: true });
+      const topicLabel = extractTopic(query) || query;
+      return NextResponse.json({
+        notes: "",
+        sources: [],
+        empty: true,
+        noMatch: !broad,
+        message: broad
+          ? undefined
+          : `Your materials don't appear to cover "${topicLabel}". Try a topic from your uploads (e.g. splay trees, B-trees, red-black trees) or upload notes on this subject.`,
+      });
     }
 
     const context = chunks
@@ -209,17 +199,27 @@ export async function POST(
 
     const system = broad
       ? `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts, write a thorough, well-organized recap of what the student's materials cover. Use Markdown with a title, "##" sections by theme/topic, and bullet points. Be comprehensive — cover every major theme present in the excerpts. Bold key terms. Do not invent facts.`
-      : `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts that relate to "${topicLabel}", write detailed study notes on that topic. Include definitions, key ideas, examples, and important details found in the excerpts. Use Markdown with a title, "##" sub-headings, and bullet points. Bold key terms. Ignore excerpts about other topics (for example, do not include B-trees when the topic is splay trees). Stay faithful to the materials — do not invent content not supported by the excerpts.`;
+      : `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts that relate to "${topicLabel}", write detailed study notes on that topic. Include definitions, key ideas, examples, and important details found in the excerpts. Use Markdown with a title, "##" sub-headings, and bullet points. Bold key terms. Ignore excerpts about other topics (for example, do not include B-trees when the topic is splay trees). Stay faithful to the materials — do not invent content not supported by the excerpts. If the excerpts only mention "${topicLabel}" in passing (e.g. when comparing to another data structure) without explaining it, respond with exactly the single line: NO_COVERAGE`;
 
     const prompt = broad
       ? `Write a comprehensive overview of everything covered in these course materials:\n\n${context}`
       : `Topic: "${topicLabel}"\n\nWrite thorough study notes on this topic using these excerpts:\n\n${context}`;
 
-    const notes = await withTimeout(
+    let notes = await withTimeout(
       generateText(prompt, system),
       40_000,
       "Search"
     );
+
+    if (!broad && notes.trim() === "NO_COVERAGE") {
+      return NextResponse.json({
+        notes: "",
+        sources: [],
+        empty: true,
+        noMatch: true,
+        message: `Your materials don't appear to cover "${topicLabel}". Try a topic from your uploads or upload notes on this subject.`,
+      });
+    }
 
     const sources = chunks.map((c) => ({
       materialId: c.material_id,

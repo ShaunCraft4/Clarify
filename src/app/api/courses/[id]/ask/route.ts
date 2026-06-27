@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse } from "@/lib/api";
 import { retrieve, buildContext } from "@/lib/retrieval";
 import { generateText } from "@/lib/ai/gemini";
+import {
+  extractTopic,
+  isBroadOverviewQuery,
+  rerankAndFilterTopicChunks,
+} from "@/lib/search-query";
 
 export const maxDuration = 60;
 
@@ -22,7 +27,7 @@ export async function POST(
       );
     }
 
-    const chunks = await retrieve(supabase, id, question, 5);
+    let chunks = await retrieve(supabase, id, question, 8);
 
     if (chunks.length === 0) {
       return NextResponse.json({
@@ -30,6 +35,19 @@ export async function POST(
           "I couldn't find anything in this course's materials related to your question. Try uploading more materials or rephrasing.",
         citations: [],
       });
+    }
+
+    if (!isBroadOverviewQuery(question)) {
+      chunks = rerankAndFilterTopicChunks(chunks, question);
+      if (chunks.length === 0) {
+        const topic = extractTopic(question) || question;
+        return NextResponse.json({
+          answer: `Your uploaded materials don't appear to cover **${topic}**. They may mention it briefly when comparing other topics, but there's no dedicated content to answer from. Try asking about a topic in your materials, or upload notes on ${topic}.`,
+          citations: [],
+        });
+      }
+    } else {
+      chunks = chunks.slice(0, 5);
     }
 
     const { context, citations } = buildContext(chunks);

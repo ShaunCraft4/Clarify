@@ -22,6 +22,8 @@ interface SearchResult {
   notes: string;
   sources: Source[];
   empty?: boolean;
+  noMatch?: boolean;
+  message?: string;
 }
 
 export default function SearchTab({
@@ -108,7 +110,20 @@ export default function SearchTab({
         </div>
       )}
 
-      {result?.empty && (
+      {result?.empty && result.noMatch && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
+          <p className="text-sm text-amber-900">
+            {result.message ??
+              `Your materials don't appear to cover "${query.trim()}".`}
+          </p>
+          <p className="text-xs text-amber-700/80 mt-2">
+            Search only writes notes from what you&apos;ve uploaded — not from
+            general knowledge.
+          </p>
+        </div>
+      )}
+
+      {result?.empty && !result.noMatch && (
         <p className="text-slate-500 text-center mt-10">
           No processed materials found yet. Upload files on the Materials tab,
           wait for them to finish processing, then try again.

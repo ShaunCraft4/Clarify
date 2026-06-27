@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import type { Course } from "@/lib/types";
 import { apiFetch } from "@/lib/fetcher";
 import { cn } from "@/lib/cn";
-import { useMaterialProcessingWatcher } from "@/hooks/useMaterialProcessingWatcher";
+import {
+  prefetchCourseTab,
+  prefetchCourseTabs,
+  type TabPrefetchId,
+} from "@/lib/course-cache";
+import { useCourseMaterials } from "@/hooks/useCourseMaterials";
+import { useMaterialProcessingToasts } from "@/hooks/useMaterialProcessingToasts";
 import {
   FileText,
   MessageCircleQuestion,
@@ -52,17 +58,27 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
   const [highlightMaterialId, setHighlightMaterialId] = useState<string | null>(
     null
   );
-  const [processingCount, setProcessingCount] = useState(0);
-  const handleProcessingChange = useCallback((count: number) => {
-    setProcessingCount(count);
-  }, []);
+  const [mounted, setMounted] = useState<Set<TabId>>(
+    () => new Set(["materials", "ask"])
+  );
 
-  useMaterialProcessingWatcher(course.id, handleProcessingChange);
+  const { materials, processingCount } = useCourseMaterials(course.id);
+  useMaterialProcessingToasts(course.id, materials, processingCount);
+
+  useEffect(() => {
+    prefetchCourseTabs(course.id);
+  }, [course.id]);
+
   const [editing, setEditing] = useState(false);
   const [editName, setEditName] = useState(course.name);
   const [editDescription, setEditDescription] = useState(course.description ?? "");
   const [saving, setSaving] = useState(false);
   const [editError, setEditError] = useState<string | null>(null);
+
+  const selectTab = useCallback((id: TabId) => {
+    setTab(id);
+    setMounted((prev) => new Set(prev).add(id));
+  }, []);
 
   function openEdit() {
     setEditName(course.name);
@@ -73,7 +89,7 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
 
   function openMaterial(materialId: string) {
     setHighlightMaterialId(materialId);
-    setTab("materials");
+    selectTab("materials");
   }
 
   async function saveCourse(e: React.FormEvent) {
@@ -104,6 +120,29 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
     } finally {
       setSaving(false);
     }
+  }
+
+  function tabPanelClass(active: boolean, ask = false) {
+    return cn(ask ? "flex h-full min-h-0 flex-col" : "", !active && "hidden");
+  }
+
+  function renderTab(
+    id: TabId,
+    active: boolean,
+    children: React.ReactNode,
+    ask = false
+  ) {
+    if (!mounted.has(id)) return null;
+    return (
+      <div
+        className={cn(
+          tabPanelClass(active, ask),
+          active && !ask && "animate-tab-in"
+        )}
+      >
+        {children}
+      </div>
+    );
   }
 
   return (
@@ -141,7 +180,11 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
             return (
               <button
                 key={t.id}
-                onClick={() => setTab(t.id)}
+                type="button"
+                onClick={() => selectTab(t.id)}
+                onMouseEnter={() =>
+                  prefetchCourseTab(course.id, t.id as TabPrefetchId)
+                }
                 className={cn(
                   "relative flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 whitespace-nowrap rounded-t-lg",
                   active
@@ -160,40 +203,62 @@ export default function CourseWorkspace({ course: initialCourse }: { course: Cou
         </nav>
       </header>
 
-      <div className="flex-1 overflow-y-auto bg-slate-50">
-        <div
-          className={
-            tab === "ask" ? "flex h-full min-h-0 flex-col" : "hidden"
-          }
-        >
+      <div className="flex-1 overflow-y-auto bg-slate-50 min-h-0">
+        {renderTab(
+          "ask",
+          tab === "ask",
           <AskTab
             courseId={course.id}
             courseName={course.name}
             onOpenMaterial={openMaterial}
+          />,
+          true
+        )}
+        {renderTab(
+          "materials",
+          tab === "materials",
+          <MaterialsTab
+            courseId={course.id}
+            onGoToNotes={() => selectTab("notes")}
+            highlightMaterialId={highlightMaterialId}
+            onHighlightDone={() => setHighlightMaterialId(null)}
           />
-        </div>
-        {/* key forces a remount per tab so the fade-in plays on every switch */}
-        <div key={tab} className={tab === "ask" ? "hidden" : "animate-tab-in"}>
-          {tab === "materials" && (
-            <MaterialsTab
-              courseId={course.id}
-              onGoToNotes={() => setTab("notes")}
-              highlightMaterialId={highlightMaterialId}
-              onHighlightDone={() => setHighlightMaterialId(null)}
-            />
-          )}
-          {tab === "search" && (
-            <SearchTab courseId={course.id} onOpenMaterial={openMaterial} />
-          )}
-          {tab === "notes" && <NotesTab courseId={course.id} />}
-          {tab === "flashcards" && <FlashcardsTab courseId={course.id} />}
-          {tab === "quizzes" && <QuizzesTab courseId={course.id} />}
-          {tab === "progress" && <ProgressTab courseId={course.id} />}
-          {tab === "plan" && (
-            <StudyPlanTab courseId={course.id} courseName={course.name} />
-          )}
-          {tab === "insights" && <InsightsTab courseId={course.id} />}
-        </div>
+        )}
+        {renderTab(
+          "search",
+          tab === "search",
+          <SearchTab courseId={course.id} onOpenMaterial={openMaterial} />
+        )}
+        {renderTab(
+          "notes",
+          tab === "notes",
+          <NotesTab courseId={course.id} />
+        )}
+        {renderTab(
+          "flashcards",
+          tab === "flashcards",
+          <FlashcardsTab courseId={course.id} />
+        )}
+        {renderTab(
+          "quizzes",
+          tab === "quizzes",
+          <QuizzesTab courseId={course.id} />
+        )}
+        {renderTab(
+          "progress",
+          tab === "progress",
+          <ProgressTab courseId={course.id} />
+        )}
+        {renderTab(
+          "plan",
+          tab === "plan",
+          <StudyPlanTab courseId={course.id} courseName={course.name} />
+        )}
+        {renderTab(
+          "insights",
+          tab === "insights",
+          <InsightsTab courseId={course.id} />
+        )}
       </div>
 
       {editing && (

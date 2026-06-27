@@ -40,3 +40,8 @@ export async function apiFetch<T = unknown>(
   }
   return data as T;
 }
+
+/** Default fetcher for SWR — key is the API path. */
+export function swrFetcher<T = unknown>(url: string): Promise<T> {
+  return apiFetch<T>(url);
+}

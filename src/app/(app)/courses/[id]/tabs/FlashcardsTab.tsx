@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
+import { invalidateCourseCache } from "@/lib/course-cache";
+import { useCourseFlashcards } from "@/hooks/useCourseFlashcards";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import type { Flashcard } from "@/lib/types";
 import {
@@ -39,9 +41,13 @@ function isDue(dueAt: string | null | undefined): boolean {
 }
 
 export default function FlashcardsTab({ courseId }: { courseId: string }) {
-  const [cards, setCards] = useState<Flashcard[]>([]);
-  const [dueCount, setDueCount] = useState(0);
-  const [loading, setLoading] = useState(true);
+  const {
+    flashcards: cards,
+    dueCount,
+    isLoading,
+    refresh,
+    patch,
+  } = useCourseFlashcards(courseId);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [reviewing, setReviewing] = useState(false);
@@ -55,20 +61,6 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
     return cards;
   }, [cards]);
 
-  const load = useCallback(async () => {
-    const { flashcards, dueCount: due } = await apiFetch<{
-      flashcards: Flashcard[];
-      dueCount: number;
-    }>(`/api/courses/${courseId}/flashcards`);
-    setCards(flashcards);
-    setDueCount(due);
-    setLoading(false);
-  }, [courseId]);
-
-  useEffect(() => {
-    load();
-  }, [load]);
-
   async function generate() {
     setGenerating(true);
     setError(null);
@@ -77,7 +69,8 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
         method: "POST",
         body: JSON.stringify({ count: 12 }),
       });
-      await load();
+      invalidateCourseCache(courseId, "flashcards");
+      await refresh();
       recordStudyActivity();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed");
@@ -102,7 +95,8 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
         method: "POST",
         body: JSON.stringify({ content, format }),
       });
-      await load();
+      invalidateCourseCache(courseId, "flashcards");
+      await refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Import failed");
     } finally {
@@ -111,15 +105,20 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
   }
 
   async function remove(id: string) {
-    setCards((c) => c.filter((x) => x.id !== id));
+    patch((prev) => ({
+      ...prev,
+      flashcards: prev.flashcards.filter((c) => c.id !== id),
+    }));
     await apiFetch(`/api/flashcards/${id}`, { method: "DELETE" }).catch(
       () => {}
     );
+    invalidateCourseCache(courseId, "flashcards");
+    await refresh();
   }
 
   const masteredCount = cards.filter((c) => c.mastered_at).length;
 
-  if (loading) {
+  if (isLoading && cards.length === 0) {
     return (
       <div className="flex items-center justify-center h-full text-slate-400">
         <Loader2 className="h-6 w-6 animate-spin" />
@@ -130,13 +129,19 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
   if (reviewing && reviewCards.length > 0) {
     return (
       <ReviewMode
+        courseId={courseId}
         cards={reviewCards}
         onExit={() => {
           setReviewing(false);
-          load();
+          void refresh();
         }}
         onUpdate={(updated) =>
-          setCards((cs) => cs.map((c) => (c.id === updated.id ? updated : c)))
+          patch((prev) => ({
+            ...prev,
+            flashcards: prev.flashcards.map((c) =>
+              c.id === updated.id ? updated : c
+            ),
+          }))
         }
       />
     );
@@ -321,10 +326,12 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
 }
 
 function ReviewMode({
+  courseId,
   cards,
   onExit,
   onUpdate,
 }: {
+  courseId: string;
   cards: Flashcard[];
   onExit: () => void;
   onUpdate: (c: Flashcard) => void;
@@ -366,10 +373,11 @@ function ReviewMode({
       );
       onUpdate(flashcard);
       recordStudyActivity();
+      invalidateCourseCache(courseId, "flashcards", "progress");
       if (i >= cards.length - 1) onExit();
       else goTo(i + 1, "right");
     },
-    [card.id, cards.length, goTo, i, onExit, onUpdate]
+    [card.id, cards.length, courseId, goTo, i, onExit, onUpdate]
   );
 
   useEffect(() => {

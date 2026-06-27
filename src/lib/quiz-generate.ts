@@ -205,7 +205,9 @@ export async function generateQuizFromMaterials(
     : "";
   const focusBlock =
     focusTopics && focusTopics.length > 0
-      ? `\n\nPRIORITY TOPICS: ${focusTopics.join(", ")}`
+      ? `\n\nFOCUS ONLY ON THESE TOPICS (every question must test one of them; spread questions across the list):
+${focusTopics.map((t) => `- ${t}`).join("\n")}
+Do NOT ask about topics outside this list. Set each question's "topic" field to the matching focus topic.`
       : "";
   const examBlock = isExamSim
     ? "\n\nEXAM STYLE: challenging distractors, precise terminology."
