@@ -62,6 +62,9 @@ export default function AskTab({
   // chat table isn't migrated yet (graceful fallback to per-browser storage).
   const [persistMode, setPersistMode] = useState<"db" | "local">("local");
   const endRef = useRef<HTMLDivElement>(null);
+  // Mirror of `loading` so the focus-sync handler can bail out mid-send without
+  // re-subscribing the listener on every keystroke.
+  const loadingRef = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -113,6 +116,37 @@ export default function AskTab({
       /* ignore */
     }
   }, [messages, hydrated, storageKey]);
+
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+
+  // Re-pull the conversation from the account when the tab regains focus, so
+  // changes made in another browser/device (new questions, deletes, clear all)
+  // show up without a manual refresh.
+  useEffect(() => {
+    if (persistMode !== "db") return;
+    async function syncFromServer() {
+      if (document.hidden || loadingRef.current) return;
+      try {
+        const { messages: serverMessages, persisted } = await apiFetch<{
+          messages: Message[];
+          persisted: boolean;
+        }>(`/api/courses/${courseId}/chat`);
+        if (persisted && !loadingRef.current) {
+          setMessages(normalizeMessages(serverMessages));
+        }
+      } catch {
+        /* ignore transient sync errors */
+      }
+    }
+    window.addEventListener("focus", syncFromServer);
+    document.addEventListener("visibilitychange", syncFromServer);
+    return () => {
+      window.removeEventListener("focus", syncFromServer);
+      document.removeEventListener("visibilitychange", syncFromServer);
+    };
+  }, [courseId, persistMode]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();

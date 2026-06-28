@@ -171,8 +171,17 @@ export default function Sidebar({
     function onStreak(e: Event) {
       setStreak((e as CustomEvent<StudyStreakState>).detail);
     }
+    function onFocus() {
+      if (!document.hidden) void loadStudyStreak();
+    }
     window.addEventListener(STUDY_STREAK_EVENT, onStreak);
-    return () => window.removeEventListener(STUDY_STREAK_EVENT, onStreak);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener(STUDY_STREAK_EVENT, onStreak);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
   }, []);
 
   useEffect(() => {
