@@ -17,6 +17,7 @@ import {
 import { SIDEBAR_SUMMARY_EVENT } from "@/lib/course-cache";
 import {
   getStudyStreak,
+  loadStudyStreak,
   STUDY_STREAK_EVENT,
   type StudyStreakState,
 } from "@/lib/study-streak";
@@ -163,7 +164,10 @@ export default function Sidebar({
   }, []);
 
   useEffect(() => {
+    // Instant paint from the local cache, then reconcile with the account so
+    // the streak matches across browsers/devices.
     setStreak(getStudyStreak());
+    void loadStudyStreak();
     function onStreak(e: Event) {
       setStreak((e as CustomEvent<StudyStreakState>).detail);
     }
