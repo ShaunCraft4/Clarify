@@ -213,7 +213,11 @@ select {
   border-color: #334155;
 }
 
-/* Activity timer — always light card + dark text (readable in dark mode too) */
+/* Primary action buttons — consistent styling (avoids browser submit-button tint) */
+.btn-primary {
+  @apply inline-flex items-center justify-center gap-2 rounded-lg border-0 bg-brand-600 font-medium text-white shadow-sm transition hover:bg-brand-700 active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-60;
+}
+
 .activity-progress {
   background-color: #eff6ff;
   border-color: #bfdbfe;

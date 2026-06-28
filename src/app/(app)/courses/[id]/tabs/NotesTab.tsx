@@ -106,14 +106,19 @@ export default function NotesTab({ courseId }: { courseId: string }) {
       <form onSubmit={generate} className="space-y-4">
         <TopicBuilder topics={topics} onChange={setTopics} />
 
-        <label className="flex items-center gap-2 text-sm text-slate-600 select-none cursor-pointer">
+        <label className="flex items-start gap-2 text-sm text-slate-600 select-none cursor-pointer">
           <input
             type="checkbox"
             checked={useMaterials}
             onChange={(e) => setUseMaterials(e.target.checked)}
-            className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            className="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
           />
-          Use my uploaded course materials as reference
+          <span>
+            Only use my uploaded course materials{" "}
+            <span className="text-slate-400">
+              (notes come from your library, not general AI knowledge)
+            </span>
+          </span>
         </label>
 
         {error && <p className="text-sm text-red-600">{error}</p>}

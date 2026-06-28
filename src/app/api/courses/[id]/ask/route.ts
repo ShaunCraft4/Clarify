@@ -3,8 +3,7 @@ import { handle, requireCourse } from "@/lib/api";
 import { retrieve, buildContext } from "@/lib/retrieval";
 import { generateText } from "@/lib/ai/gemini";
 import {
-  extractTopic,
-  isBroadOverviewQuery,
+  resolveStudyQuery,
   rerankAndFilterTopicChunks,
 } from "@/lib/search-query";
 
@@ -27,7 +26,8 @@ export async function POST(
       );
     }
 
-    let chunks = await retrieve(supabase, id, question, 8);
+    const resolved = resolveStudyQuery(question);
+    let chunks = await retrieve(supabase, id, resolved.searchText, 8);
 
     if (chunks.length === 0) {
       return NextResponse.json({
@@ -37,12 +37,11 @@ export async function POST(
       });
     }
 
-    if (!isBroadOverviewQuery(question)) {
+    if (!resolved.isBroad) {
       chunks = rerankAndFilterTopicChunks(chunks, question);
       if (chunks.length === 0) {
-        const topic = extractTopic(question) || question;
         return NextResponse.json({
-          answer: `Your uploaded materials don't appear to cover **${topic}**. They may mention it briefly when comparing other topics, but there's no dedicated content to answer from. Try asking about a topic in your materials, or upload notes on ${topic}.`,
+          answer: `Your uploaded materials don't appear to cover **${resolved.topic}**. They may mention it briefly when comparing other topics, but there's no dedicated content to answer from. Try asking about a topic in your materials, or upload notes on **${resolved.topic}**.`,
           citations: [],
         });
       }

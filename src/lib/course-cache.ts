@@ -11,6 +11,15 @@ import {
 
 export { courseCacheKeys } from "@/lib/course-fetchers";
 
+export const SIDEBAR_SUMMARY_EVENT = "clarify:sidebar-summary-refresh";
+
+function notifySidebarSummary(courseId: string) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent(SIDEBAR_SUMMARY_EVENT, { detail: { courseId } })
+  );
+}
+
 export type TabPrefetchId =
   | "materials"
   | "flashcards"
@@ -74,11 +83,14 @@ export function invalidateCourseCache(
   }
   if (all || keys.includes("flashcards")) {
     void mutate(courseCacheKeys.flashcards(courseId));
+    notifySidebarSummary(courseId);
   }
   if (all || keys.includes("quizzes") || keys.includes("rubric")) {
     void mutate(quizzesCacheKey(courseId));
+    notifySidebarSummary(courseId);
   }
   if (all || keys.includes("progress")) {
     void mutate(progressCacheKey(courseId));
+    notifySidebarSummary(courseId);
   }
 }

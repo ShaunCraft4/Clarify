@@ -3,8 +3,7 @@ import { handle, requireCourse } from "@/lib/api";
 import { retrieve, type RetrievedChunk } from "@/lib/retrieval";
 import { generateText, withTimeout } from "@/lib/ai/gemini";
 import {
-  isBroadOverviewQuery,
-  extractTopic,
+  resolveStudyQuery,
   scoreChunkForTopic,
   rerankAndFilterTopicChunks,
 } from "@/lib/search-query";
@@ -78,7 +77,7 @@ async function fetchKeywordChunks(
   query: string,
   maxChunks: number
 ): Promise<RetrievedChunk[]> {
-  const topic = extractTopic(query) || query;
+  const topic = resolveStudyQuery(query).topic;
   if (!topic) return [];
 
   const { data: all } = await supabase
@@ -150,7 +149,8 @@ export async function POST(
       return NextResponse.json({ error: "Query is required" }, { status: 400 });
     }
 
-    const broad = isBroadOverviewQuery(query);
+    const resolved = resolveStudyQuery(query);
+    const broad = resolved.isBroad;
     const maxChunks = broad ? BROAD_MAX_CHUNKS : TOPIC_MAX_CHUNKS;
     const maxContext = broad ? BROAD_MAX_CONTEXT : TOPIC_MAX_CONTEXT;
     let chunks: RetrievedChunk[];
@@ -158,9 +158,12 @@ export async function POST(
     if (broad) {
       chunks = await fetchRepresentativeChunks(supabase, id, maxChunks);
     } else {
-      const topic = extractTopic(query);
-      const searchText = topic.length >= 2 ? topic : query;
-      const semantic = await retrieve(supabase, id, searchText, maxChunks + 6);
+      const semantic = await retrieve(
+        supabase,
+        id,
+        resolved.searchText,
+        maxChunks + 6
+      );
       chunks = semantic;
 
       const keywordHits = await fetchKeywordChunks(
@@ -177,7 +180,7 @@ export async function POST(
     chunks = capContext(chunks, maxChunks, maxContext);
 
     if (chunks.length === 0) {
-      const topicLabel = extractTopic(query) || query;
+      const topicLabel = resolved.topic;
       return NextResponse.json({
         notes: "",
         sources: [],
@@ -193,9 +196,7 @@ export async function POST(
       .map((c, i) => `[Excerpt ${i + 1} — ${c.materialName}]\n${c.content}`)
       .join("\n\n---\n\n");
 
-    const topicLabel = broad
-      ? "all course materials"
-      : extractTopic(query) || query;
+    const topicLabel = broad ? "all course materials" : resolved.topic;
 
     const system = broad
       ? `You are a study-notes generator for "${course.name}". Using ONLY the provided excerpts, write a thorough, well-organized recap of what the student's materials cover. Use Markdown with a title, "##" sections by theme/topic, and bullet points. Be comprehensive — cover every major theme present in the excerpts. Bold key terms. Do not invent facts.`

@@ -4,6 +4,14 @@ import { computeExamReadiness } from "@/lib/exam-readiness";
 import { isDue } from "@/lib/srs";
 import { isMissingColumn } from "@/lib/db-schema";
 
+function countDueFlashcards(
+  cards: { due_at?: string | null; created_at?: string | null }[]
+): number {
+  return cards.filter((card) =>
+    isDue((card.due_at as string | null | undefined) ?? card.created_at)
+  ).length;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -14,7 +22,10 @@ export async function GET(
 
     const [readiness, flashcardsRes, attemptsRes] = await Promise.all([
       computeExamReadiness(supabase, id),
-      supabase.from("flashcards").select("due_at, created_at").eq("course_id", id),
+      supabase
+        .from("flashcards")
+        .select("due_at, created_at")
+        .eq("course_id", id),
       supabase
         .from("quiz_attempts")
         .select("score")
@@ -25,13 +36,16 @@ export async function GET(
 
     let dueCount = 0;
     if (flashcardsRes.error && isMissingColumn(flashcardsRes.error)) {
-      dueCount = 0;
+      const fallback = await supabase
+        .from("flashcards")
+        .select("created_at")
+        .eq("course_id", id);
+      if (fallback.error) throw fallback.error;
+      dueCount = countDueFlashcards(fallback.data ?? []);
     } else if (flashcardsRes.error) {
       throw flashcardsRes.error;
     } else {
-      dueCount = (flashcardsRes.data ?? []).filter((card) =>
-        isDue((card.due_at as string | null) ?? (card.created_at as string))
-      ).length;
+      dueCount = countDueFlashcards(flashcardsRes.data ?? []);
     }
 
     if (attemptsRes.error) throw attemptsRes.error;

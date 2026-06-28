@@ -9,12 +9,30 @@ import { cn } from "@/lib/cn";
 import { recordStudyActivity } from "@/lib/study-streak";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
 import { CitationSource } from "@/components/CitationSource";
-import { Send, Loader2, FileText, MessageSquare, Trash2 } from "lucide-react";
+import { Send, MessageSquare, Trash2, X, FileText } from "lucide-react";
 
 interface Message {
+  id: string;
   role: "user" | "assistant";
   content: string;
   citations?: Citation[];
+}
+
+function newMessageId() {
+  return crypto.randomUUID();
+}
+
+function normalizeMessages(raw: unknown): Message[] {
+  if (!Array.isArray(raw)) return [];
+  return raw.map((m, i) => {
+    const row = m as Partial<Message>;
+    return {
+      id: row.id ?? `legacy-${i}-${row.role ?? "msg"}`,
+      role: row.role === "assistant" ? "assistant" : "user",
+      content: String(row.content ?? ""),
+      citations: Array.isArray(row.citations) ? row.citations : undefined,
+    };
+  });
 }
 
 function AssistantText({ text }: { text: string }) {
@@ -42,18 +60,16 @@ export default function AskTab({
   const [hydrated, setHydrated] = useState(false);
   const endRef = useRef<HTMLDivElement>(null);
 
-  // Load saved chat for this course.
   useEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
-      if (saved) setMessages(JSON.parse(saved));
+      if (saved) setMessages(normalizeMessages(JSON.parse(saved)));
     } catch {
       /* ignore */
     }
     setHydrated(true);
   }, [storageKey]);
 
-  // Persist on every change (after initial load).
   useEffect(() => {
     if (!hydrated) return;
     try {
@@ -68,7 +84,10 @@ export default function AskTab({
     const question = input.trim();
     if (!question || loading) return;
     setInput("");
-    setMessages((m) => [...m, { role: "user", content: question }]);
+    setMessages((m) => [
+      ...m,
+      { id: newMessageId(), role: "user", content: question },
+    ]);
     setLoading(true);
     try {
       const { answer, citations } = await apiFetch<{
@@ -80,13 +99,19 @@ export default function AskTab({
       });
       setMessages((m) => [
         ...m,
-        { role: "assistant", content: answer, citations },
+        {
+          id: newMessageId(),
+          role: "assistant",
+          content: answer,
+          citations,
+        },
       ]);
       recordStudyActivity();
     } catch (err) {
       setMessages((m) => [
         ...m,
         {
+          id: newMessageId(),
           role: "assistant",
           content: err instanceof Error ? err.message : "Something went wrong.",
         },
@@ -100,9 +125,15 @@ export default function AskTab({
     }
   }
 
+  function removeMessage(id: string) {
+    setMessages((m) => m.filter((msg) => msg.id !== id));
+    setOpenCitation(null);
+  }
+
   function clearChat() {
     if (!confirm("Clear this conversation?")) return;
     setMessages([]);
+    setOpenCitation(null);
     try {
       localStorage.removeItem(storageKey);
     } catch {
@@ -118,11 +149,12 @@ export default function AskTab({
         </p>
         {messages.length > 0 && (
           <button
+            type="button"
             onClick={clearChat}
             className="flex items-center gap-1.5 rounded-lg border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100"
           >
             <Trash2 className="h-4 w-4" />
-            Clear
+            Clear all
           </button>
         )}
       </div>
@@ -137,22 +169,38 @@ export default function AskTab({
             </p>
           </div>
         )}
-        {messages.map((m, i) => (
+        {messages.map((m) => (
           <div
-            key={i}
+            key={m.id}
             className={cn(
-              "flex",
+              "flex group",
               m.role === "user" ? "justify-end" : "justify-start"
             )}
           >
             <div
               className={cn(
-                "max-w-[85%] rounded-2xl px-4 py-3 animate-fade-in",
+                "relative max-w-[85%] rounded-2xl px-4 py-3 animate-fade-in",
                 m.role === "user"
                   ? "bg-brand-600 text-white"
                   : "bg-white border border-slate-200"
               )}
             >
+              <button
+                type="button"
+                onClick={() => removeMessage(m.id)}
+                title={
+                  m.role === "user" ? "Remove this question" : "Remove this answer"
+                }
+                className={cn(
+                  "absolute -top-2 rounded-full p-1 opacity-0 transition group-hover:opacity-100 focus:opacity-100",
+                  m.role === "user"
+                    ? "-left-2 bg-white text-slate-500 shadow-sm hover:text-red-600"
+                    : "-right-2 bg-slate-100 text-slate-500 hover:bg-red-50 hover:text-red-600"
+                )}
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+
               {m.role === "assistant" ? (
                 <AssistantText text={m.content} />
               ) : (
@@ -164,6 +212,7 @@ export default function AskTab({
                   {m.citations.map((c) => (
                     <button
                       key={c.chunkId}
+                      type="button"
                       onClick={() =>
                         setOpenCitation(
                           openCitation === c.chunkId ? null : c.chunkId
@@ -221,7 +270,7 @@ export default function AskTab({
         <button
           type="submit"
           disabled={loading || !input.trim()}
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          className="btn-primary px-4 py-2.5"
         >
           <Send className="h-4 w-4" />
         </button>

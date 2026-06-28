@@ -74,7 +74,7 @@ export default function SearchTab({
         <button
           type="submit"
           disabled={loading || !query.trim()}
-          className="flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+          className="btn-primary px-4 py-2.5"
         >
           {loading ? (
             <>

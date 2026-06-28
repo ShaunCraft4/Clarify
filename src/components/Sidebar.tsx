@@ -14,6 +14,7 @@ import {
   recordRecentCourse,
   togglePinnedCourse,
 } from "@/lib/sidebar-prefs";
+import { SIDEBAR_SUMMARY_EVENT } from "@/lib/course-cache";
 import {
   getStudyStreak,
   STUDY_STREAK_EVENT,
@@ -199,20 +200,35 @@ export default function Sidebar({
       setSummary(null);
       return;
     }
+
     let cancelled = false;
-    setSummaryLoading(true);
-    apiFetch<SidebarSummary>(`/api/courses/${activeCourseId}/sidebar-summary`)
-      .then((data) => {
-        if (!cancelled) setSummary(data);
-      })
-      .catch(() => {
-        if (!cancelled) setSummary(null);
-      })
-      .finally(() => {
-        if (!cancelled) setSummaryLoading(false);
-      });
+
+    function loadSummary() {
+      setSummaryLoading(true);
+      apiFetch<SidebarSummary>(`/api/courses/${activeCourseId}/sidebar-summary`)
+        .then((data) => {
+          if (!cancelled) setSummary(data);
+        })
+        .catch(() => {
+          if (!cancelled) setSummary(null);
+        })
+        .finally(() => {
+          if (!cancelled) setSummaryLoading(false);
+        });
+    }
+
+    loadSummary();
+
+    function onRefresh(e: Event) {
+      const detail = (e as CustomEvent<{ courseId?: string }>).detail;
+      if (detail?.courseId && detail.courseId !== activeCourseId) return;
+      loadSummary();
+    }
+
+    window.addEventListener(SIDEBAR_SUMMARY_EVENT, onRefresh);
     return () => {
       cancelled = true;
+      window.removeEventListener(SIDEBAR_SUMMARY_EVENT, onRefresh);
     };
   }, [activeCourseId, prefsReady]);
 

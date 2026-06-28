@@ -1,10 +1,115 @@
 /** Natural-language study queries — strip command words to find the topic. */
-const COMMAND_PREFIX =
-  /^(please\s+)?(can you\s+)?(explain|summarize|summarise|describe|tell me about|what is|what are|give me|write about|overview of|review|go over|help me (understand|with))\s+/i;
 
 const MATERIALS_SUFFIX =
-  /\s+(from|in|about|across)\s+(all|my|the)?\s*(materials?|course|notes?|slides?|readings?|uploads?|files?)\s*$/i;
+  /\s+(?:from|in|about|across|using|based on)\s+(?:all|my|the|our)?\s*(?:uploaded\s+)?(?:materials?|course|notes?|slides?|readings?|uploads?|files?|library|textbook|lectures?|handouts?|pdfs?)\s*$/i;
 
+function normalizeSpaces(text: string): string {
+  return text.replace(/\s+/g, " ").trim();
+}
+
+/** Fix common typos before pattern stripping. */
+function normalizeQueryTypos(text: string): string {
+  return text
+    .replace(/\bexplain(?:t|d)\s+o\s+me\b/gi, "explain to me")
+    .replace(/\bexplain(?:t|d)\s+to\s+me\b/gi, "explain to me")
+    .replace(/\bexplain(?:t|d)\b/gi, "explain")
+    .replace(/\s+o\s+me\b/gi, " to me")
+    .replace(/\bt\s+o\s+me\b/gi, "to me");
+}
+
+/** Applied repeatedly until the string stops changing. */
+const LEADING_STRIPS: RegExp[] = [
+  /^(?:please|kindly|hey|hi|hello|yo|ok|okay)\s*,?\s*/i,
+  /^(?:thanks|thank you)\s*,?\s*(?:but\s+)?/i,
+  /^(?:search(?:\s+for)?|find(?:\s+(?:info(?:rmation)?|notes?))?(?:\s+(?:on|about|for))?|look(?:\s+up)?|lookup)\s+/i,
+  /^(?:study\s+)?notes?(?:\s+(?:on|about|for|regarding))?\s+/i,
+  /^(?:info(?:rmation)?|details?|everything)\s+(?:on|about|for|regarding)\s+/i,
+  /^(?:i(?:'m|\s+am)\s+(?:confused|stuck|lost)\s+(?:on|about|with)|i\s+don'?t\s+(?:understand|get)\s+(?:the\s+)?)\s*/i,
+  /^(?:i(?:'m|\s+was)\s+wondering\s+(?:if\s+(?:you\s+)?(?:could|can|would)\s+(?:explain|tell me about|describe|clarify)\s+|about\s+|whether\s+))\s*/i,
+  /^(?:i(?:'d|\s+would|\s+want|\s+need|\s+wanna)\s+(?:like\s+)?(?:you\s+to\s+)?(?:know|learn|understand)\s+(?:about\s+)?)\s*/i,
+  /^(?:can you|could you|would you|will you|do you mind(?: if you)?)\s+(?:please\s+)?/i,
+  /^(?:can i get|could i get)\s+(?:an?\s+)?(?:explanation|overview|summary|rundown|breakdown)\s+(?:of|on|about)\s+/i,
+  /^(?:help me\s+(?:understand|with|learn(?:\s+about)?)|walk me through|break down|clarify|define|explain(?:t|s|ed)?|describe|summarize|summarise|outline|review|recap|go over|cover|discuss|talk about|teach me|show me|compare|contrast)\s+/i,
+  /^(?:give me\s+(?:an?\s+)?(?:overview|summary|explanation|rundown|breakdown)\s+(?:of|on|about)\s+)/i,
+  /^(?:tell me\s+(?:about\s+)?)\s*/i,
+  /^(?:write\s+(?:about|on|notes?\s+(?:on|about|for)))\s+/i,
+  /^(?:what(?:'s|\s+is|\s+are)\s+(?:the\s+)?(?:definition of|meaning of|difference between|purpose of|role of|concept of|idea of|time complexity of|space complexity of|big[- ]o of|properties of|characteristics of|features of|advantages of|disadvantages of|types of|steps of|overview of)\s+)/i,
+  /^(?:what(?:'s|\s+is|\s+are)\s+(?:a|an|the)\s+)/i,
+  /^(?:what(?:'s|\s+is|\s+are)\s+)/i,
+  /^(?:why(?:'s|\s+do|\s+does|\s+is|\s+are|\s+would|\s+should|\s+can))\s+(?:we|you|they|it|I|there)\s+(?:use|need|have|call|say)\s+/i,
+  /^(?:how(?:'s|\s+do|\s+does|\s+is|\s+are|\s+can|\s+should|\s+would|\s+to))\s+/i,
+  /^how\s+/i,
+  /^(?:to me|for me|about|regarding|on the topic of|related to|concerning|when it comes to)\s+/i,
+  /^(?:a|an|the)\s+/i,
+];
+
+const INLINE_STRIPS: RegExp[] = [
+  /\beverything\s+about\b/gi,
+  /\ball\s+about\b/gi,
+  /\b(?:to|t\s+o)\s+me\b/gi,
+  /\b(?:from|in|using|based on)\s+(?:all|my|the|our)?\s*(?:uploaded\s+)?(?:materials?|course|notes?|slides?|readings?|uploads?|files?|library)\b/gi,
+];
+
+const TRAILING_STRIPS: RegExp[] = [
+  /\s+(?:please|thanks|thank you)\s*$/i,
+  /\s+(?:in simple terms|in detail|briefly|quickly|simply|in general|in practice|in theory)\s*$/i,
+  /\s+(?:for me|to me)\s*$/i,
+  MATERIALS_SUFFIX,
+  /\s+(?:work|works|mean|means|function|functions|operate|operates|defined|used|important)\s*\??\s*$/i,
+  /\?+$/,
+  /[.!]+$/,
+];
+
+/** Strip conversational phrasing until only the study topic remains. */
+function stripQueryFiller(query: string): string {
+  let topic = normalizeSpaces(normalizeQueryTypos(query));
+
+  for (let pass = 0; pass < 16; pass++) {
+    const before = topic;
+    for (const pattern of LEADING_STRIPS) {
+      topic = topic.replace(pattern, " ");
+    }
+    for (const pattern of INLINE_STRIPS) {
+      topic = topic.replace(pattern, " ");
+    }
+    for (const pattern of TRAILING_STRIPS) {
+      topic = topic.replace(pattern, " ");
+    }
+    topic = normalizeSpaces(topic);
+    if (topic === before) break;
+  }
+
+  return topic;
+}
+
+/** Pull the subject out of a conversational query. */
+export function extractTopic(query: string): string {
+  return stripQueryFiller(query.trim());
+}
+
+export interface ResolvedStudyQuery {
+  raw: string;
+  /** Clean topic label for messages and prompts. */
+  topic: string;
+  /** Text to use for embedding / vector search. */
+  searchText: string;
+  isBroad: boolean;
+}
+
+/** Single entry point for Ask, Search, and Notes retrieval. */
+export function resolveStudyQuery(raw: string): ResolvedStudyQuery {
+  const trimmed = raw.trim();
+  const isBroad = isBroadOverviewQuery(trimmed);
+  const topic = extractTopic(trimmed);
+  const searchText =
+    isBroad || topic.length < 2 ? trimmed : topic;
+  return {
+    raw: trimmed,
+    topic: topic.length > 0 ? topic : trimmed,
+    searchText,
+    isBroad,
+  };
+}
 const STOP_WORDS = new Set([
   "the",
   "and",
@@ -124,16 +229,6 @@ export function isBroadOverviewQuery(query: string): boolean {
   );
 }
 
-/** Pull the subject out of a conversational query. */
-export function extractTopic(query: string): string {
-  let topic = query.trim();
-  topic = topic.replace(COMMAND_PREFIX, "");
-  topic = topic.replace(/\beverything\s+about\b/gi, "");
-  topic = topic.replace(/\ball\s+about\b/gi, "");
-  topic = topic.replace(MATERIALS_SUFFIX, "");
-  topic = topic.replace(/\b(from|in|about)\s+(all|my|the)?\s*(materials?|course)\b/gi, "");
-  return topic.replace(/\s+/g, " ").trim();
-}
 
 function escapeRegex(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
