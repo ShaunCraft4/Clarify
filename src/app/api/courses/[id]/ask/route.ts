@@ -29,7 +29,16 @@ async function persistTurn(
     const { data, error } = await supabase
       .from("chat_messages")
       .insert([
-        { course_id: courseId, user_id: userId, role: "user", content: question },
+        {
+          course_id: courseId,
+          user_id: userId,
+          role: "user",
+          content: question,
+          // Must be present on every row: a batch insert with mismatched keys
+          // makes PostgREST send NULL for the missing key, which violates the
+          // citations NOT NULL constraint and rejects the whole insert.
+          citations: [],
+        },
         {
           course_id: courseId,
           user_id: userId,
