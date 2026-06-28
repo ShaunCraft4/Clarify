@@ -18,6 +18,25 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
 
+/* ── Light theme polish ───────────────────────────────────────────────────
+   The default canvas (near-white) plus large pure-white panels can feel harsh
+   and glary. In light mode we calm the canvas to a soft off-white, take the
+   hard edge off pure white, and ease text from near-black to a softer ink so
+   the whole app is gentler on the eyes while keeping clear hierarchy. */
+html:not(.dark) body {
+  background-color: #e9edf3;
+  color: #1f2937;
+}
+html:not(.dark) .bg-slate-50 {
+  background-color: #e9edf3;
+}
+html:not(.dark) .bg-white {
+  background-color: #fbfcfe;
+}
+html:not(.dark) .text-slate-900 {
+  color: #1f2937;
+}
+
 /* Smooth theme transitions */
 *,
 *::before,

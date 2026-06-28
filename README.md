@@ -6,6 +6,23 @@ The core differentiator: Clarify doesn't just answer questions about documents. 
 
 ---
 
+## Live demo (for recruiters)
+
+Want to try Clarify without setting anything up? A hosted demo with a pre-loaded sample course is available:
+
+**▶ [clarify-nu.vercel.app](https://clarify-nu.vercel.app)**
+
+| | |
+| --- | --- |
+| **Email** | `clarify.demo@gmail.com` |
+| **Password** | `clarifydemo` |
+
+Just **log in** with the credentials above (no need to sign up). This shared account is for evaluation only — please don't store anything sensitive in it.
+
+> Running your own copy is easy and only takes a few minutes — see [Setup](#setup) below.
+
+---
+
 ## Self-hosting (read this first)
 
 Clarify is designed to be **run locally on your own machine**. Every installation uses **your own** credentials:
@@ -15,8 +32,6 @@ Clarify is designed to be **run locally on your own machine**. Every installatio
 
 You are **not** using the repo maintainer's API quota. Keys live in `.env.local` on your machine — they are never committed to Git and are not shared with other users.
 
-> **Do not** publish a public demo with a single shared `GOOGLE_AI_API_KEY`. Free-tier limits are per Google project (~5 text requests/min, ~250/day). One key for many users will hit rate limits quickly.
-
 ---
 
 ## Features
@@ -25,7 +40,7 @@ You are **not** using the repo maintainer's API quota. Keys live in `.env.local`
 - Course management — create, rename, delete; each course has its own material library
 - Material upload pipeline: **Uploading → Extracting → Chunking → Embedding → Done** with live status
 - **OCR for scanned PDFs** via Gemini vision when no text layer is present
-- **Ask** — RAG Q&A grounded in your materials, with clickable source citations; chat persists until you clear it
+- **Ask** — RAG Q&A grounded in your materials, with clickable source citations; conversations are **saved to your account** and sync across browsers/devices (delete individual messages or clear all)
 - **Search** — natural-language study notes from your materials (e.g. *"Explain everything from all materials"* or *"Explain red-black trees"*)
 - **Notes** — generate structured study notes from topics/subtopics and download as Markdown
 - Flashcard generation + **spaced repetition** review (Again / Good / Easy) with source links
@@ -37,7 +52,8 @@ You are **not** using the repo maintainer's API quota. Keys live in `.env.local`
 - Personalized day-by-day study plan from an exam date + hours/day
 - Interactive learning dependency graph (React Flow)
 - Exam prediction mode (ranked likely topics with confidence)
-- Dark mode, page transitions, and account deletion (sidebar)
+- **Daily study streak** saved to your account (counts once per day, syncs across browsers/devices)
+- Light/dark mode, page transitions, and account deletion (sidebar)
 
 ---
 
@@ -71,6 +87,10 @@ npm install
    - [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) — core schema
    - [`supabase/migrations/0002_srs_rubric_exams.sql`](supabase/migrations/0002_srs_rubric_exams.sql) — spaced repetition, rubrics, exam simulations
    - [`supabase/migrations/0003_course_emoji.sql`](supabase/migrations/0003_course_emoji.sql) — optional course emoji icons
+   - [`supabase/migrations/0004_chat_messages.sql`](supabase/migrations/0004_chat_messages.sql) — Ask chat history saved to your account
+   - [`supabase/migrations/0005_study_streak.sql`](supabase/migrations/0005_study_streak.sql) — daily study streak saved to your account
+
+   **Run all of them** — each migration enables Row Level Security and its policy. Skipping a migration leaves that feature's table inaccessible (writes silently fail).
 3. Under **Authentication → Providers**, email/password is enabled by default. For local testing you may want to disable **Confirm email** so new sign-ups log in immediately.
 4. Configure **auth URLs and email** for login and password reset — see [Auth & password reset](#auth--password-reset) below.
 
