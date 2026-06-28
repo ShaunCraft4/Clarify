@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse } from "@/lib/api";
-import { isDue } from "@/lib/srs";
+import { countDueFlashcards } from "@/lib/srs";
 import { isMissingColumn } from "@/lib/db-schema";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -86,7 +86,7 @@ export async function GET(
       };
     });
 
-    const dueCount = flashcards.filter((c) => isDue(c.due_at)).length;
+    const dueCount = countDueFlashcards(flashcards);
 
     return NextResponse.json({ flashcards, dueCount });
   });

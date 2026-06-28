@@ -16,6 +16,7 @@ import {
   detectImportFormat,
 } from "@/lib/flashcard-import";
 import { recordStudyActivity } from "@/lib/study-streak";
+import { isFlashcardDue } from "@/lib/srs";
 import { cn } from "@/lib/cn";
 import {
   Sparkles,
@@ -35,11 +36,6 @@ import {
   Info,
 } from "lucide-react";
 
-function isDue(dueAt: string | null | undefined): boolean {
-  if (!dueAt) return true;
-  return new Date(dueAt) <= new Date();
-}
-
 export default function FlashcardsTab({ courseId }: { courseId: string }) {
   const {
     flashcards: cards,
@@ -56,7 +52,7 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
   const importInputRef = useRef<HTMLInputElement>(null);
 
   const reviewCards = useMemo(() => {
-    const due = cards.filter((c) => isDue(c.due_at));
+    const due = cards.filter((c) => isFlashcardDue(c));
     if (due.length > 0) return due;
     return cards;
   }, [cards]);
@@ -305,7 +301,7 @@ export default function FlashcardsTab({ courseId }: { courseId: string }) {
                     <Check className="h-3 w-3" /> Mastered
                   </span>
                 )}
-                {isDue(c.due_at) && !c.mastered_at && (
+                {isFlashcardDue(c) && (
                   <span className="inline-flex items-center gap-1 text-amber-600">
                     <Clock className="h-3 w-3" /> Due
                   </span>

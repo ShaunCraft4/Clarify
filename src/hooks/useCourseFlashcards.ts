@@ -6,6 +6,7 @@ import {
   fetchCourseFlashcards,
   type FlashcardsCache,
 } from "@/lib/course-fetchers";
+import { countDueFlashcards } from "@/lib/srs";
 
 export function useCourseFlashcards(courseId: string) {
   const { data, error, isLoading, isValidating, mutate } = useSWR(
@@ -14,10 +15,12 @@ export function useCourseFlashcards(courseId: string) {
   );
 
   const cache: FlashcardsCache = data ?? { flashcards: [], dueCount: 0 };
+  const flashcards = cache.flashcards;
+  const dueCount = countDueFlashcards(flashcards);
 
   return {
-    flashcards: cache.flashcards,
-    dueCount: cache.dueCount,
+    flashcards,
+    dueCount,
     isLoading: isLoading && !data,
     isValidating,
     error: error instanceof Error ? error.message : null,

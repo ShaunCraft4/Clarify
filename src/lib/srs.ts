@@ -57,3 +57,19 @@ export function isDue(dueAt: string | null | undefined): boolean {
   if (!dueAt) return true;
   return new Date(dueAt) <= new Date();
 }
+
+export interface DueCheckable {
+  due_at?: string | null;
+  created_at?: string | null;
+  mastered_at?: string | null;
+}
+
+/** Whether a flashcard should appear in the "due" queue / counter. */
+export function isFlashcardDue(card: DueCheckable): boolean {
+  if (card.mastered_at) return false;
+  return isDue(card.due_at ?? card.created_at);
+}
+
+export function countDueFlashcards(cards: DueCheckable[]): number {
+  return cards.filter(isFlashcardDue).length;
+}

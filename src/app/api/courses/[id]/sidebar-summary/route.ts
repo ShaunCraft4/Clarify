@@ -1,16 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse } from "@/lib/api";
 import { computeExamReadiness } from "@/lib/exam-readiness";
-import { isDue } from "@/lib/srs";
+import { countDueFlashcards } from "@/lib/srs";
 import { isMissingColumn } from "@/lib/db-schema";
-
-function countDueFlashcards(
-  cards: { due_at?: string | null; created_at?: string | null }[]
-): number {
-  return cards.filter((card) =>
-    isDue((card.due_at as string | null | undefined) ?? card.created_at)
-  ).length;
-}
 
 export async function GET(
   _req: NextRequest,
@@ -24,7 +16,7 @@ export async function GET(
       computeExamReadiness(supabase, id),
       supabase
         .from("flashcards")
-        .select("due_at, created_at")
+        .select("due_at, created_at, mastered_at")
         .eq("course_id", id),
       supabase
         .from("quiz_attempts")
@@ -38,7 +30,7 @@ export async function GET(
     if (flashcardsRes.error && isMissingColumn(flashcardsRes.error)) {
       const fallback = await supabase
         .from("flashcards")
-        .select("created_at")
+        .select("created_at, mastered_at")
         .eq("course_id", id);
       if (fallback.error) throw fallback.error;
       dueCount = countDueFlashcards(fallback.data ?? []);
