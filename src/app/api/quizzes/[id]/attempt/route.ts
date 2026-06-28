@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireUser, ApiError } from "@/lib/api";
-import { updateTopicMastery, isCorrect } from "@/lib/mastery";
+import { updateTopicMastery, isCorrect, alignCorrectAnswerToOptions } from "@/lib/mastery";
 import { gradeShortAnswer } from "@/lib/rubric-grade";
 import { isMissingTable } from "@/lib/db-schema";
 import type { QuizAttemptAnswer, TopicBreakdown } from "@/lib/types";
@@ -41,7 +41,7 @@ export async function POST(
 
     const { data: questions, error: qErr } = await supabase
       .from("quiz_questions")
-      .select("id, type, question, correct_answer, topic")
+      .select("id, type, question, correct_answer, topic, options")
       .eq("quiz_id", id);
     if (qErr) throw qErr;
 
@@ -69,14 +69,25 @@ export async function POST(
         correct = result.correct;
         feedback = result.feedback;
       } else {
-        correct = isCorrect(q.type, userAnswer, q.correct_answer);
+        const options = Array.isArray(q.options)
+          ? (q.options as string[])
+          : null;
+        correct = isCorrect(q.type, userAnswer, q.correct_answer, options);
       }
+
+      const storedCorrect =
+        q.type === "multiple_choice" || q.type === "true_false"
+          ? alignCorrectAnswerToOptions(
+              q.correct_answer,
+              Array.isArray(q.options) ? (q.options as string[]) : []
+            )
+          : q.correct_answer;
 
       graded.push({
         questionId: q.id,
         answer: userAnswer,
         correct,
-        correctAnswer: q.correct_answer,
+        correctAnswer: storedCorrect,
         topic: q.topic,
         feedback,
       });

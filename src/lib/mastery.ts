@@ -74,19 +74,71 @@ function editDistance(a: string, b: string): number {
 }
 
 /** Similarity ratio in [0,1] based on edit distance. */
-function similarity(a: string, b: string): number {
+export function answerSimilarity(a: string, b: string): number {
   if (!a && !b) return 1;
   const dist = editDistance(a, b);
   return 1 - dist / Math.max(a.length, b.length);
 }
 
+/**
+ * Map an LLM "correctAnswer" to the exact option string shown to the student.
+ * Handles letter keys (A/B/C), minor wording drift, and casing.
+ */
+export function alignCorrectAnswerToOptions(
+  correctAnswer: string,
+  options: string[]
+): string {
+  const answer = correctAnswer.trim();
+  if (!answer || options.length === 0) return answer;
+
+  const normAnswer = normalize(answer);
+  const exact = options.find((o) => normalize(o) === normAnswer);
+  if (exact) return exact;
+
+  const letterPrefix = normAnswer.match(/^([a-d])[).:\s]/);
+  if (letterPrefix) {
+    const idx = letterPrefix[1].charCodeAt(0) - "a".charCodeAt(0);
+    if (idx >= 0 && idx < options.length) return options[idx];
+  }
+  if (/^[a-d]$/.test(normAnswer)) {
+    const idx = normAnswer.charCodeAt(0) - "a".charCodeAt(0);
+    if (idx >= 0 && idx < options.length) return options[idx];
+  }
+
+  const partial = options.find(
+    (o) =>
+      normalize(o).includes(normAnswer) || normAnswer.includes(normalize(o))
+  );
+  if (partial) return partial;
+
+  let best = options[0];
+  let bestScore = 0;
+  for (const o of options) {
+    const score = answerSimilarity(normalize(o), normAnswer);
+    if (score > bestScore) {
+      bestScore = score;
+      best = o;
+    }
+  }
+  return bestScore >= 0.75 ? best : answer;
+}
+
 export function isCorrect(
   type: string,
   userAnswer: string,
-  correctAnswer: string
+  correctAnswer: string,
+  options?: string[] | null
 ): boolean {
+  let reference = correctAnswer;
+  if (
+    (type === "multiple_choice" || type === "true_false") &&
+    options?.length
+  ) {
+    reference = alignCorrectAnswerToOptions(correctAnswer, options);
+  }
+
   const a = normalize(userAnswer);
-  const b = normalize(correctAnswer);
+  const b = normalize(reference);
 
   if (type === "short_answer") {
     if (!a) return false;
@@ -98,11 +150,11 @@ export function isCorrect(
     // answer still counts.
     const wordMatch = a
       .split(" ")
-      .some((w) => b.split(" ").some((bw) => similarity(w, bw) >= 0.8));
-    return similarity(a, b) >= 0.8 || wordMatch;
+      .some((w) => b.split(" ").some((bw) => answerSimilarity(w, bw) >= 0.8));
+    return answerSimilarity(a, b) >= 0.8 || wordMatch;
   }
 
   // Multiple choice / true-false: forgive only trivial typos.
   if (a === b) return true;
-  return similarity(a, b) >= 0.9;
+  return answerSimilarity(a, b) >= 0.9;
 }

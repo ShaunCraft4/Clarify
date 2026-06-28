@@ -3,6 +3,7 @@ import { generateJSON } from "@/lib/ai/gemini";
 import { errorMessage } from "@/lib/api";
 import { gatherCourseContent } from "@/lib/content";
 import { isMissingColumn } from "@/lib/db-schema";
+import { alignCorrectAnswerToOptions } from "@/lib/mastery";
 import type { QuestionType } from "@/lib/types";
 
 export interface GeneratedQuestion {
@@ -255,21 +256,29 @@ Do NOT ask about topics outside this list. Set each question's "topic" field to 
     throw new Error(errorMessage(quizErr, "Failed to save quiz"));
   }
 
-  const rows = valid.slice(0, total).map((q, idx) => ({
-    quiz_id: quiz.id,
-    user_id: userId,
-    type: q.type,
-    question: q.question,
-    options:
+  const rows = valid.slice(0, total).map((q, idx) => {
+    const options =
       q.type === "true_false"
         ? ["True", "False"]
         : q.options && q.options.length
           ? q.options
-          : null,
-    correct_answer: q.correctAnswer,
-    topic: q.topic || "General",
-    position: idx,
-  }));
+          : null;
+    const correctAnswer =
+      options?.length
+        ? alignCorrectAnswerToOptions(q.correctAnswer, options)
+        : q.correctAnswer;
+
+    return {
+      quiz_id: quiz.id,
+      user_id: userId,
+      type: q.type,
+      question: q.question,
+      options,
+      correct_answer: correctAnswer,
+      topic: q.topic || "General",
+      position: idx,
+    };
+  });
 
   const { error: qErr } = await supabase.from("quiz_questions").insert(rows);
   if (qErr) {
