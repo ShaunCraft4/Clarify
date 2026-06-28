@@ -1,13 +1,62 @@
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse } from "@/lib/api";
+import { isMissingTable } from "@/lib/db-schema";
 import { retrieve, buildContext } from "@/lib/retrieval";
 import { generateText } from "@/lib/ai/gemini";
 import {
   resolveStudyQuery,
   rerankAndFilterTopicChunks,
 } from "@/lib/search-query";
+import type { Citation } from "@/lib/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
 
 export const maxDuration = 60;
+
+/**
+ * Persist a question + answer turn so the conversation survives across
+ * browsers/devices. Returns saved message ids (and a `persisted` flag so the
+ * client can fall back to local storage when the table isn't migrated yet).
+ */
+async function persistTurn(
+  supabase: SupabaseClient,
+  courseId: string,
+  userId: string,
+  question: string,
+  answer: string,
+  citations: Citation[]
+) {
+  try {
+    const { data, error } = await supabase
+      .from("chat_messages")
+      .insert([
+        { course_id: courseId, user_id: userId, role: "user", content: question },
+        {
+          course_id: courseId,
+          user_id: userId,
+          role: "assistant",
+          content: answer,
+          citations,
+        },
+      ])
+      .select("id, role, seq")
+      .order("seq", { ascending: true });
+
+    if (error) {
+      if (isMissingTable(error)) return { persisted: false };
+      throw error;
+    }
+
+    const rows = (data ?? []) as { id: string; role: string }[];
+    return {
+      persisted: true,
+      userMessageId: rows.find((r) => r.role === "user")?.id,
+      assistantMessageId: rows.find((r) => r.role === "assistant")?.id,
+    };
+  } catch {
+    // Never let persistence failure break the answer itself.
+    return { persisted: false };
+  }
+}
 
 export async function POST(
   req: NextRequest,
@@ -15,7 +64,7 @@ export async function POST(
 ) {
   return handle(async () => {
     const { id } = await params;
-    const { supabase, course } = await requireCourse(id);
+    const { supabase, user, course } = await requireCourse(id);
     const body = await req.json();
     const question = (body.question ?? "").toString().trim();
     const mode: "answer" | "tutor" = body.mode === "tutor" ? "tutor" : "answer";
@@ -30,20 +79,18 @@ export async function POST(
     let chunks = await retrieve(supabase, id, resolved.searchText, 8);
 
     if (chunks.length === 0) {
-      return NextResponse.json({
-        answer:
-          "I couldn't find anything in this course's materials related to your question. Try uploading more materials or rephrasing.",
-        citations: [],
-      });
+      const answer =
+        "I couldn't find anything in this course's materials related to your question. Try uploading more materials or rephrasing.";
+      const saved = await persistTurn(supabase, id, user.id, question, answer, []);
+      return NextResponse.json({ answer, citations: [], ...saved });
     }
 
     if (!resolved.isBroad) {
       chunks = rerankAndFilterTopicChunks(chunks, question);
       if (chunks.length === 0) {
-        return NextResponse.json({
-          answer: `Your uploaded materials don't appear to cover **${resolved.topic}**. They may mention it briefly when comparing other topics, but there's no dedicated content to answer from. Try asking about a topic in your materials, or upload notes on **${resolved.topic}**.`,
-          citations: [],
-        });
+        const answer = `Your uploaded materials don't appear to cover **${resolved.topic}**. They may mention it briefly when comparing other topics, but there's no dedicated content to answer from. Try asking about a topic in your materials, or upload notes on **${resolved.topic}**.`;
+        const saved = await persistTurn(supabase, id, user.id, question, answer, []);
+        return NextResponse.json({ answer, citations: [], ...saved });
       }
     } else {
       chunks = chunks.slice(0, 5);
@@ -66,6 +113,8 @@ export async function POST(
 
     const answer = await generateText(prompt, system);
 
-    return NextResponse.json({ answer, citations });
+    const saved = await persistTurn(supabase, id, user.id, question, answer, citations);
+
+    return NextResponse.json({ answer, citations, ...saved });
   });
 }

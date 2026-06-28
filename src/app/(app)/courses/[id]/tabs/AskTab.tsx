@@ -58,49 +58,86 @@ export default function AskTab({
   const [loading, setLoading] = useState(false);
   const [openCitation, setOpenCitation] = useState<string | null>(null);
   const [hydrated, setHydrated] = useState(false);
+  // "db" once we confirm the conversation is saved server-side, "local" if the
+  // chat table isn't migrated yet (graceful fallback to per-browser storage).
+  const [persistMode, setPersistMode] = useState<"db" | "local">("local");
   const endRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem(storageKey);
-      if (saved) setMessages(normalizeMessages(JSON.parse(saved)));
-    } catch {
-      /* ignore */
-    }
-    setHydrated(true);
-  }, [storageKey]);
+    let cancelled = false;
+    (async () => {
+      try {
+        const { messages: serverMessages, persisted } = await apiFetch<{
+          messages: Message[];
+          persisted: boolean;
+        }>(`/api/courses/${courseId}/chat`);
+        if (cancelled) return;
+        if (persisted) {
+          setPersistMode("db");
+          setMessages(normalizeMessages(serverMessages));
+          setHydrated(true);
+          return;
+        }
+      } catch {
+        /* fall through to local storage */
+      }
+      if (cancelled) return;
+      // Fallback: load whatever this browser has stored locally.
+      try {
+        const saved = localStorage.getItem(storageKey);
+        if (saved) setMessages(normalizeMessages(JSON.parse(saved)));
+      } catch {
+        /* ignore */
+      }
+      setHydrated(true);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [courseId, storageKey]);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || persistMode === "db") return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(messages));
     } catch {
       /* ignore */
     }
-  }, [messages, hydrated, storageKey]);
+  }, [messages, hydrated, storageKey, persistMode]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
     const question = input.trim();
     if (!question || loading) return;
     setInput("");
+    const tempUserId = newMessageId();
     setMessages((m) => [
       ...m,
-      { id: newMessageId(), role: "user", content: question },
+      { id: tempUserId, role: "user", content: question },
     ]);
     setLoading(true);
     try {
-      const { answer, citations } = await apiFetch<{
-        answer: string;
-        citations: Citation[];
-      }>(`/api/courses/${courseId}/ask`, {
-        method: "POST",
-        body: JSON.stringify({ question }),
-      });
+      const { answer, citations, userMessageId, assistantMessageId } =
+        await apiFetch<{
+          answer: string;
+          citations: Citation[];
+          persisted?: boolean;
+          userMessageId?: string;
+          assistantMessageId?: string;
+        }>(`/api/courses/${courseId}/ask`, {
+          method: "POST",
+          body: JSON.stringify({ question }),
+        });
+      if (userMessageId) setPersistMode("db");
       setMessages((m) => [
-        ...m,
+        // Swap the optimistic user id for the saved one so deletes target the DB.
+        ...m.map((msg) =>
+          msg.id === tempUserId && userMessageId
+            ? { ...msg, id: userMessageId }
+            : msg
+        ),
         {
-          id: newMessageId(),
+          id: assistantMessageId ?? newMessageId(),
           role: "assistant",
           content: answer,
           citations,
@@ -128,16 +165,32 @@ export default function AskTab({
   function removeMessage(id: string) {
     setMessages((m) => m.filter((msg) => msg.id !== id));
     setOpenCitation(null);
+    if (persistMode === "db") {
+      apiFetch(
+        `/api/courses/${courseId}/chat?messageId=${encodeURIComponent(id)}`,
+        { method: "DELETE" }
+      ).catch(() => {
+        /* ignore */
+      });
+    }
   }
 
   function clearChat() {
     if (!confirm("Clear this conversation?")) return;
     setMessages([]);
     setOpenCitation(null);
-    try {
-      localStorage.removeItem(storageKey);
-    } catch {
-      /* ignore */
+    if (persistMode === "db") {
+      apiFetch(`/api/courses/${courseId}/chat`, { method: "DELETE" }).catch(
+        () => {
+          /* ignore */
+        }
+      );
+    } else {
+      try {
+        localStorage.removeItem(storageKey);
+      } catch {
+        /* ignore */
+      }
     }
   }
 
