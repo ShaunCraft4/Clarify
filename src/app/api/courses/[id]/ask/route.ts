@@ -38,8 +38,7 @@ async function persistTurn(
           citations,
         },
       ])
-      .select("id, role, seq")
-      .order("seq", { ascending: true });
+      .select("id, role");
 
     if (error) {
       if (isMissingTable(error)) return { persisted: false };
@@ -52,8 +51,10 @@ async function persistTurn(
       userMessageId: rows.find((r) => r.role === "user")?.id,
       assistantMessageId: rows.find((r) => r.role === "assistant")?.id,
     };
-  } catch {
-    // Never let persistence failure break the answer itself.
+  } catch (err) {
+    // Never let persistence failure break the answer itself, but log it so the
+    // cause is visible in server logs instead of failing silently.
+    console.error("[ask] failed to persist chat messages:", err);
     return { persisted: false };
   }
 }

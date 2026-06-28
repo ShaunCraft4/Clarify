@@ -65,6 +65,16 @@ export default function AskTab({
 
   useEffect(() => {
     let cancelled = false;
+
+    function readLocal(): Message[] {
+      try {
+        const saved = localStorage.getItem(storageKey);
+        return saved ? normalizeMessages(JSON.parse(saved)) : [];
+      } catch {
+        return [];
+      }
+    }
+
     (async () => {
       try {
         const { messages: serverMessages, persisted } = await apiFetch<{
@@ -74,7 +84,10 @@ export default function AskTab({
         if (cancelled) return;
         if (persisted) {
           setPersistMode("db");
-          setMessages(normalizeMessages(serverMessages));
+          const normalized = normalizeMessages(serverMessages);
+          // Prefer the DB conversation, but if it's empty fall back to this
+          // browser's local copy so nothing is ever lost on refresh.
+          setMessages(normalized.length > 0 ? normalized : readLocal());
           setHydrated(true);
           return;
         }
@@ -82,13 +95,7 @@ export default function AskTab({
         /* fall through to local storage */
       }
       if (cancelled) return;
-      // Fallback: load whatever this browser has stored locally.
-      try {
-        const saved = localStorage.getItem(storageKey);
-        if (saved) setMessages(normalizeMessages(JSON.parse(saved)));
-      } catch {
-        /* ignore */
-      }
+      setMessages(readLocal());
       setHydrated(true);
     })();
     return () => {
@@ -96,14 +103,16 @@ export default function AskTab({
     };
   }, [courseId, storageKey]);
 
+  // Always keep a local backup, even in DB mode, so a failed/slow write never
+  // makes the conversation disappear on refresh within the same browser.
   useEffect(() => {
-    if (!hydrated || persistMode === "db") return;
+    if (!hydrated) return;
     try {
       localStorage.setItem(storageKey, JSON.stringify(messages));
     } catch {
       /* ignore */
     }
-  }, [messages, hydrated, storageKey, persistMode]);
+  }, [messages, hydrated, storageKey]);
 
   async function send(e: React.FormEvent) {
     e.preventDefault();
