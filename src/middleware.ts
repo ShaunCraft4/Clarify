@@ -55,8 +55,21 @@ export async function middleware(request: NextRequest) {
   return response;
 }
 
+/**
+ * The upload routes — `api/courses/:id/notes/audio` and `api/courses/:id/materials`
+ * — are excluded on purpose. Next.js buffers the request body so middleware can
+ * inspect it, and that buffer is capped, so a large upload gets truncated and its
+ * multipart body is corrupt before the route ever sees it. Both routes
+ * authenticate themselves via `requireCourse`, so skipping middleware costs
+ * nothing and lets big files stream through.
+ *
+ * This must stay a single literal string: Next reads `matcher` by statically
+ * analysing the source at build time, so anything it can't evaluate there (a
+ * template literal, a variable, `.join()`) silently leaves middleware running on
+ * every request — including `_next/static`, which breaks the logged-out app.
+ */
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/courses/[^/]+/notes/audio|api/courses/[^/]+/materials|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

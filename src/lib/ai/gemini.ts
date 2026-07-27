@@ -1,4 +1,10 @@
-import { GoogleGenerativeAI, type Tool } from "@google/generative-ai";
+import { GoogleGenerativeAI, type Part, type Tool } from "@google/generative-ai";
+import { INLINE_AUDIO_MAX_BYTES, MAX_AUDIO_BYTES } from "@/lib/audio";
+import {
+  deleteGeminiFile,
+  uploadToGeminiFiles,
+  waitForGeminiFile,
+} from "./gemini-files";
 import { llmQueue } from "./queue";
 import {
   recordLlmCall,
@@ -152,6 +158,62 @@ export async function ocrPdf(buffer: Buffer): Promise<string> {
     });
     return result.response.text().trim();
   });
+}
+
+/**
+ * Generate text from an audio recording using Gemini's native audio
+ * understanding (lecture capture, voice notes, discussions). A single
+ * multimodal call keeps this within free-tier quota — we don't transcribe
+ * and then summarise in two separate round-trips.
+ *
+ * Short clips are sent inline (one round trip). Longer recordings go through
+ * the Files API, which accepts up to 2GB and avoids base64 inflating a
+ * multi-hour lecture past the inline payload limit.
+ */
+export async function generateFromAudio(
+  buffer: Buffer,
+  mimeType: string,
+  prompt: string,
+  systemInstruction?: string
+): Promise<string> {
+  if (buffer.length > MAX_AUDIO_BYTES) {
+    throw new Error(
+      "This recording is too large. Try a shorter recording, or compress it to MP3 first."
+    );
+  }
+
+  const model = genAI().getGenerativeModel({
+    model: LLM_MODEL,
+    ...(systemInstruction ? { systemInstruction } : {}),
+  });
+
+  const generate = (audioPart: Part) =>
+    withRetry(async () => {
+      const result = await model.generateContent({
+        contents: [{ role: "user", parts: [audioPart, { text: prompt }] }],
+      });
+      return result.response.text().trim();
+    });
+
+  if (buffer.length <= INLINE_AUDIO_MAX_BYTES) {
+    return generate({
+      inlineData: { data: buffer.toString("base64"), mimeType },
+    });
+  }
+
+  const file = await uploadToGeminiFiles(
+    buffer,
+    mimeType,
+    `clarify-audio-${Date.now()}`
+  );
+  try {
+    await waitForGeminiFile(file.name);
+    return await generate({
+      fileData: { fileUri: file.uri, mimeType: file.mimeType },
+    });
+  } finally {
+    void deleteGeminiFile(file.name);
+  }
 }
 
 /** Free-form text generation. */

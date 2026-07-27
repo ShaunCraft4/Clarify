@@ -10,14 +10,30 @@ import TopicBuilder, {
   emptyTopic,
 } from "@/components/TopicBuilder";
 import ActivityProgress, { ACTIVITY_ESTIMATES } from "@/components/ActivityProgress";
+import AudioRecorder from "@/components/AudioRecorder";
+import {
+  AUDIO_ACCEPT_ATTR,
+  LARGE_AUDIO_HINT_BYTES,
+  MAX_AUDIO_BYTES,
+  MAX_TRANSCRIPT_CHARS,
+  MIN_TRANSCRIPT_CHARS,
+  formatBytes,
+  resolveAudioMimeType,
+} from "@/lib/audio";
 import {
   NotebookPen,
   Loader2,
   Download,
   Copy,
   Check,
+  ChevronDown,
+  ChevronRight,
   FileDown,
+  FileText,
   Sparkles,
+  AudioLines,
+  Upload,
+  X,
 } from "lucide-react";
 
 interface NotesResult {
@@ -33,6 +49,18 @@ export default function NotesTab({ courseId }: { courseId: string }) {
   const [result, setResult] = useState<NotesResult | null>(null);
   const [copied, setCopied] = useState(false);
   const articleRef = useRef<HTMLElement>(null);
+
+  const [audioFile, setAudioFile] = useState<File | null>(null);
+  const [audioLoading, setAudioLoading] = useState(false);
+  const [audioError, setAudioError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [showTranscript, setShowTranscript] = useState(false);
+  const [transcript, setTranscript] = useState("");
+  const [transcriptLoading, setTranscriptLoading] = useState(false);
+
+  const busy = loading || audioLoading || transcriptLoading;
+  const transcriptChars = transcript.trim().length;
 
   async function generate(e: React.FormEvent) {
     e.preventDefault();
@@ -57,6 +85,97 @@ export default function NotesTab({ courseId }: { courseId: string }) {
       setError(err instanceof Error ? err.message : "Could not generate notes");
     } finally {
       setLoading(false);
+    }
+  }
+
+  function pickAudioFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0] ?? null;
+    // Allow re-picking the same file after a failed attempt.
+    e.target.value = "";
+    if (!file) return;
+
+    if (!resolveAudioMimeType(file.type, file.name)) {
+      setAudioError(
+        "That file type isn't supported. Use MP3, WAV, M4A, AAC, OGG, FLAC, or WEBM audio."
+      );
+      setAudioFile(null);
+      return;
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      setAudioError(
+        `That file is ${formatBytes(file.size)} — the limit is ${formatBytes(
+          MAX_AUDIO_BYTES
+        )}. Compress it to MP3, split it up, or paste its transcript below instead.`
+      );
+      setAudioFile(null);
+      setShowTranscript(true);
+      return;
+    }
+
+    setAudioError(null);
+    setAudioFile(file);
+  }
+
+  async function generateFromAudio(audio: Blob, filename: string) {
+    setAudioLoading(true);
+    setAudioError(null);
+    setError(null);
+    setResult(null);
+    try {
+      const form = new FormData();
+      form.append("audio", audio, filename);
+      const res = await apiFetch<NotesResult>(
+        `/api/courses/${courseId}/notes/audio`,
+        { method: "POST", body: form }
+      );
+      setResult(res);
+      recordStudyActivity();
+    } catch (err) {
+      const message =
+        err instanceof Error
+          ? err.message
+          : "Could not generate notes from that audio";
+      // Hosted platforms (Vercel and friends) cap request bodies well below our
+      // own limit, so a big upload fails at the edge before reaching the route.
+      const tooLarge = message.includes("413");
+      setAudioError(
+        tooLarge
+          ? "This recording is too large for the hosted demo, which caps uploads at about 4.5 MB. Upload a shorter clip, paste its transcript below, or run Clarify locally for full-length lectures."
+          : message
+      );
+      if (tooLarge) setShowTranscript(true);
+    } finally {
+      setAudioLoading(false);
+    }
+  }
+
+  async function generateFromTranscript() {
+    const text = transcript.trim();
+    if (text.length < MIN_TRANSCRIPT_CHARS) {
+      setAudioError(
+        `That transcript is too short to work with — paste at least ${MIN_TRANSCRIPT_CHARS} characters.`
+      );
+      return;
+    }
+    setTranscriptLoading(true);
+    setAudioError(null);
+    setError(null);
+    setResult(null);
+    try {
+      const res = await apiFetch<NotesResult>(
+        `/api/courses/${courseId}/notes/transcript`,
+        { method: "POST", body: JSON.stringify({ transcript: text }) }
+      );
+      setResult(res);
+      recordStudyActivity();
+    } catch (err) {
+      setAudioError(
+        err instanceof Error
+          ? err.message
+          : "Could not generate notes from that transcript"
+      );
+    } finally {
+      setTranscriptLoading(false);
     }
   }
 
@@ -132,7 +251,7 @@ export default function NotesTab({ courseId }: { courseId: string }) {
 
         <button
           type="submit"
-          disabled={loading}
+          disabled={busy}
           className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-5 py-2.5 font-medium text-white shadow-sm transition hover:bg-brand-700 hover:shadow disabled:opacity-60 active:scale-[0.98]"
         >
           {loading ? (
@@ -148,6 +267,169 @@ export default function NotesTab({ courseId }: { courseId: string }) {
           )}
         </button>
       </form>
+
+      <section className="space-y-3 border-t border-slate-200 pt-6">
+        <div>
+          <h2 className="flex items-center gap-2 text-lg font-semibold text-slate-800">
+            <AudioLines className="h-5 w-5 text-brand-600" />
+            Notes from audio
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Upload a lecture recording or record one here — Clarify listens and
+            turns the speech into structured notes. Handles full-length classes
+            up to {formatBytes(MAX_AUDIO_BYTES)}; large files take a while to
+            upload.
+          </p>
+        </div>
+
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept={AUDIO_ACCEPT_ATTR}
+          onChange={pickAudioFile}
+          className="hidden"
+        />
+
+        {audioFile ? (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 animate-fade-in">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-50 text-brand-700">
+              <AudioLines className="h-3.5 w-3.5" />
+            </span>
+            <span className="min-w-0 flex-1 truncate text-sm text-slate-700">
+              {audioFile.name}{" "}
+              <span className="text-slate-400">
+                ({formatBytes(audioFile.size)})
+              </span>
+            </span>
+            <button
+              type="button"
+              onClick={() => generateFromAudio(audioFile, audioFile.name)}
+              disabled={busy}
+              className="btn-primary px-3 py-1.5 text-sm"
+            >
+              <Sparkles className="h-4 w-4" />
+              Generate notes
+            </button>
+            <button
+              type="button"
+              onClick={() => setAudioFile(null)}
+              disabled={busy}
+              title="Remove file"
+              className="rounded-md p-1.5 text-slate-400 hover:bg-red-50 hover:text-red-600 disabled:opacity-60"
+            >
+              <X className="h-4 w-4" />
+            </button>
+            {audioFile.size > LARGE_AUDIO_HINT_BYTES && (
+              <p className="w-full text-xs text-slate-400">
+                Large file — uploading may take several minutes on a slow
+                connection. Keep this tab open.
+              </p>
+            )}
+          </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={busy}
+            className="flex items-center gap-1.5 rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm font-medium text-slate-600 hover:border-brand-400 hover:text-brand-700 disabled:opacity-60"
+          >
+            <Upload className="h-4 w-4" />
+            Upload an audio file
+          </button>
+        )}
+
+        <AudioRecorder onSend={generateFromAudio} busy={busy} />
+
+        <div className="space-y-3">
+          <button
+            type="button"
+            onClick={() => setShowTranscript((open) => !open)}
+            className="flex items-center gap-1 text-sm font-medium text-slate-500 transition hover:text-brand-700"
+          >
+            {showTranscript ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+            Too big to upload? Paste a transcript instead
+          </button>
+
+          {showTranscript && (
+            <div className="space-y-2 animate-fade-in">
+              <p className="text-sm text-slate-500">
+                If your recording is over {formatBytes(MAX_AUDIO_BYTES)} — or you
+                already have a transcript from Zoom, Teams, or your phone — paste
+                the text here and Clarify will write the notes from that.
+              </p>
+              <textarea
+                value={transcript}
+                onChange={(e) => setTranscript(e.target.value)}
+                rows={7}
+                placeholder="Paste the lecture transcript here…"
+                className="w-full resize-y rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-brand-400 focus:ring-2 focus:ring-brand-100"
+              />
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span
+                  className={`text-xs ${
+                    transcriptChars > MAX_TRANSCRIPT_CHARS
+                      ? "text-red-600"
+                      : "text-slate-400"
+                  }`}
+                >
+                  {transcriptChars.toLocaleString()} /{" "}
+                  {MAX_TRANSCRIPT_CHARS.toLocaleString()} characters
+                </span>
+                <div className="flex items-center gap-2">
+                  {transcript && (
+                    <button
+                      type="button"
+                      onClick={() => setTranscript("")}
+                      disabled={busy}
+                      className="rounded-lg px-2.5 py-1.5 text-sm font-medium text-slate-500 transition hover:bg-slate-100 hover:text-slate-700 disabled:opacity-60"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={generateFromTranscript}
+                    disabled={
+                      busy ||
+                      transcriptChars < MIN_TRANSCRIPT_CHARS ||
+                      transcriptChars > MAX_TRANSCRIPT_CHARS
+                    }
+                    className="btn-primary px-3 py-1.5 text-sm"
+                  >
+                    <FileText className="h-4 w-4" />
+                    Generate from transcript
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {audioError && <p className="text-sm text-red-600">{audioError}</p>}
+
+        <ActivityProgress
+          active={audioLoading || transcriptLoading}
+          label={
+            transcriptLoading
+              ? "Reading your transcript…"
+              : "Listening to your recording…"
+          }
+          estimateSeconds={
+            transcriptLoading
+              ? ACTIVITY_ESTIMATES.notes
+              : ACTIVITY_ESTIMATES.audioNotes
+          }
+          hint={
+            transcriptLoading
+              ? "Organising the transcript into structured notes — long transcripts take a little longer."
+              : "Transcribing the audio and writing structured notes — longer recordings take more time."
+          }
+        />
+      </section>
 
       {result && (
         <div className="space-y-3 animate-fade-in">

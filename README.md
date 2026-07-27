@@ -43,6 +43,7 @@ You are **not** using the repo maintainer's API quota. Keys live in `.env.local`
 - **Ask** — RAG Q&A grounded in your materials, with clickable source citations; conversations are **saved to your account** and sync across browsers/devices (delete individual messages or clear all)
 - **Search** — natural-language study notes from your materials (e.g. *"Explain everything from all materials"* or *"Explain red-black trees"*)
 - **Notes** — generate structured study notes from topics/subtopics and download as Markdown
+- **Notes from audio** — upload a lecture recording *or* record in-app (with pause/resume) and Gemini turns the speech into organised study notes; handles full-length classes (up to 200MB / several hours), with a paste-a-transcript fallback for anything larger
 - Flashcard generation + **spaced repetition** review (Again / Good / Easy) with source links
 - **Export flashcards** as Markdown or Anki CSV
 - Quiz generation (multiple choice / true-false / short answer), instant grading, per-topic breakdown
@@ -235,6 +236,23 @@ On upload, the file is stored in Supabase Storage, then a background job:
 
 The UI polls the material's `status` to show step-by-step progress.
 
+### Audio notes
+
+Recordings are sent straight to Gemini, which understands speech natively — there's no separate transcription step, so a lecture costs a single AI call.
+
+| Recording size | How it's sent |
+| --- | --- |
+| Up to 12MB | Inline with the request (one round trip, best for short voice notes) |
+| 12MB – 200MB | [Gemini Files API](https://ai.google.dev/gemini-api/docs/interactions/files) — uploaded, polled until processed, then referenced by URI and deleted afterwards |
+
+Gemini accepts up to ~9.5 hours of audio per prompt, so a 3-hour class is well within range. In-app recording needs `localhost` or HTTPS (a browser requirement for microphone access).
+
+In-app recordings are captured as **mono at 24kbps**, since Gemini downsamples everything to 16kbps mono anyway. Recording at the browser default would make uploads roughly 10x slower for no gain in accuracy — a 3-hour lecture comes out around 32MB instead of 170MB.
+
+> **Hosting note:** serverless platforms cap request bodies far below 200MB — Vercel's limit is **4.5 MB**, and no configuration changes it. Long lectures therefore work when you run Clarify **locally** (`npm run dev` / `npm start`), where no such cap exists. A hosted deployment is fine for short clips. Bear in mind uploads are also bound by your own connection speed: a 200MB file on a slow uplink can take a long time.
+
+**Transcript fallback.** When a recording is too big to upload (or you already have a transcript from Zoom, Teams, or your phone), expand *"Too big to upload? Paste a transcript instead"* and paste the text — up to 500,000 characters, roughly a 6-hour lecture. It runs the same prompt as the audio path, so the notes come out identically structured, and it uploads nothing, which makes it the reliable route on the hosted demo.
+
 ### Key implementation notes
 
 - **Vector dimension is 768.** `gemini-embedding-001` uses `outputDimensionality: 768` to match the DB schema.
@@ -270,6 +288,8 @@ The UI polls the material's `status` to show step-by-step progress.
 | `POST` | `/api/courses/:id/ask` | RAG Q&A |
 | `POST` | `/api/courses/:id/search` | Natural-language search → study notes |
 | `POST` | `/api/courses/:id/notes` | Generate structured notes |
+| `POST` | `/api/courses/:id/notes/audio` | Generate notes from an audio recording |
+| `POST` | `/api/courses/:id/notes/transcript` | Generate notes from a pasted transcript |
 | `GET/POST` | `/api/courses/:id/flashcards[/generate]` | List / generate flashcards |
 | `PATCH/DELETE` | `/api/flashcards/:id` | Update mastery / delete |
 | `GET/POST` | `/api/courses/:id/quizzes[/generate]` | List / generate quizzes |

@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 export const ACTIVITY_ESTIMATES = {
   search: 30,
   notes: 55,
+  audioNotes: 70,
   ask: 20,
   flashcards: 25,
   quiz: 35,
