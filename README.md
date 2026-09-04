@@ -6,23 +6,6 @@ The core differentiator: Clarify doesn't just answer questions about documents. 
 
 ---
 
-## Live demo (for recruiters)
-
-Want to try Clarify without setting anything up? A hosted demo with a pre-loaded sample course is available:
-
-**▶ [clarify-nu.vercel.app](https://clarify-nu.vercel.app)**
-
-| | |
-| --- | --- |
-| **Email** | `clarify.demo@gmail.com` |
-| **Password** | `clarifydemo` |
-
-Just **log in** with the credentials above (no need to sign up). This shared account is for evaluation only — please don't store anything sensitive in it.
-
-> Running your own copy is easy and only takes a few minutes — see [Setup](#setup) below.
-
----
-
 ## Self-hosting (read this first)
 
 Clarify is designed to be **run locally on your own machine**. Every installation uses **your own** credentials:
