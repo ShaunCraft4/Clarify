@@ -140,7 +140,7 @@ export default function NotesTab({ courseId }: { courseId: string }) {
       const tooLarge = message.includes("413");
       setAudioError(
         tooLarge
-          ? "This recording is too large for the hosted demo, which caps uploads at about 4.5 MB. Upload a shorter clip, paste its transcript below, or run Clarify locally for full-length lectures."
+          ? "This recording is too large for this host, which caps uploads at about 4.5 MB. Upload a shorter clip, paste its transcript below, or run Clarify locally for full-length lectures."
           : message
       );
       if (tooLarge) setShowTranscript(true);

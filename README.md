@@ -6,26 +6,9 @@ The core differentiator: Clarify doesn't just answer questions about documents. 
 
 ---
 
-## Live demo (for recruiters)
-
-Want to try Clarify without setting anything up? A hosted demo with a pre-loaded sample course is available:
-
-**▶ [clarify-nu.vercel.app](https://clarify-nu.vercel.app)**
-
-| | |
-| --- | --- |
-| **Email** | `clarify.demo@gmail.com` |
-| **Password** | `clarifydemo` |
-
-Just **log in** with the credentials above (no need to sign up). This shared account is for evaluation only — please don't store anything sensitive in it.
-
-> Running your own copy is easy and only takes a few minutes — see [Setup](#setup) below.
-
----
-
 ## Self-hosting (read this first)
 
-Clarify is designed to be **run locally on your own machine**. Every installation uses **your own** credentials:
+Clarify is designed to be **run locally on your own machine**. There is no shared public demo — a hosted instance would spend the maintainer's Gemini quota and fill a free-tier database. Every installation uses **your own** credentials:
 
 - **Your** Supabase project (database, auth, file storage)
 - **Your** Google AI Studio API key (Gemini + embeddings)
@@ -251,7 +234,7 @@ In-app recordings are captured as **mono at 24kbps**, since Gemini downsamples e
 
 > **Hosting note:** serverless platforms cap request bodies far below 200MB — Vercel's limit is **4.5 MB**, and no configuration changes it. Long lectures therefore work when you run Clarify **locally** (`npm run dev` / `npm start`), where no such cap exists. A hosted deployment is fine for short clips. Bear in mind uploads are also bound by your own connection speed: a 200MB file on a slow uplink can take a long time.
 
-**Transcript fallback.** When a recording is too big to upload (or you already have a transcript from Zoom, Teams, or your phone), expand *"Too big to upload? Paste a transcript instead"* and paste the text — up to 500,000 characters, roughly a 6-hour lecture. It runs the same prompt as the audio path, so the notes come out identically structured, and it uploads nothing, which makes it the reliable route on the hosted demo.
+**Transcript fallback.** When a recording is too big to upload (or you already have a transcript from Zoom, Teams, or your phone), expand *"Too big to upload? Paste a transcript instead"* and paste the text — up to 500,000 characters, roughly a 6-hour lecture. It runs the same prompt as the audio path, so the notes come out identically structured, and it uploads nothing — which also sidesteps serverless request-body caps.
 
 ### Key implementation notes
 
