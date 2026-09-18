@@ -4,16 +4,9 @@ An AI-powered learning platform that functions as a **personal learning coach**,
 
 The core differentiator: Clarify doesn't just answer questions about documents. It **tracks what you know, finds what you don't, and tells you what to study next.**
 
----
+Clarify is meant to be **run on your own machine**. You use your own free Supabase project and your own Google AI key. Nothing in this repo spends anyone else's quota.
 
-## Self-hosting (read this first)
-
-Clarify is designed to be **run locally on your own machine**. There is no shared public demo — a hosted instance would spend the maintainer's Gemini quota and fill a free-tier database. Every installation uses **your own** credentials:
-
-- **Your** Supabase project (database, auth, file storage)
-- **Your** Google AI Studio API key (Gemini + embeddings)
-
-You are **not** using the repo maintainer's API quota. Keys live in `.env.local` on your machine — they are never committed to Git and are not shared with other users.
+To get it running, skip to [Setup](#setup-do-these-in-order).
 
 ---
 
@@ -51,145 +44,6 @@ You are **not** using the repo maintainer's API quota. Keys live in `.env.local`
 - **Embeddings:** `gemini-embedding-001` (Google), pinned to 768-dim via `outputDimensionality`
 - **PDF parsing:** `pdf-parse` (+ Gemini OCR fallback)
 - **Charts / Graph:** Recharts + React Flow
-
----
-
-## Setup
-
-### 1. Clone and install
-
-```bash
-git clone https://github.com/YOUR_USERNAME/Clarify.git
-cd Clarify
-npm install
-```
-
-### 2. Configure Supabase
-
-1. Create a project at [supabase.com](https://supabase.com).
-2. In the **SQL Editor**, run the migrations in order:
-   - [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) — core schema
-   - [`supabase/migrations/0002_srs_rubric_exams.sql`](supabase/migrations/0002_srs_rubric_exams.sql) — spaced repetition, rubrics, exam simulations
-   - [`supabase/migrations/0003_course_emoji.sql`](supabase/migrations/0003_course_emoji.sql) — optional course emoji icons
-   - [`supabase/migrations/0004_chat_messages.sql`](supabase/migrations/0004_chat_messages.sql) — Ask chat history saved to your account
-   - [`supabase/migrations/0005_study_streak.sql`](supabase/migrations/0005_study_streak.sql) — daily study streak saved to your account
-
-   **Run all of them** — each migration enables Row Level Security and its policy. Skipping a migration leaves that feature's table inaccessible (writes silently fail).
-3. Under **Authentication → Providers**, email/password is enabled by default. For local testing you may want to disable **Confirm email** so new sign-ups log in immediately.
-4. Configure **auth URLs and email** for login and password reset — see [Auth & password reset](#auth--password-reset) below.
-
-### Auth & password reset
-
-Clarify’s login page includes **Forgot password?** Users enter their email, Supabase sends a reset link, and they set a new password at `/auth/reset-password`. **You do not handle resets manually** — Supabase Auth sends the email.
-
-Each self-hoster configures this **once** in their own Supabase project (same place as signup email).
-
-#### 1. Site URL
-
-Supabase → **Authentication → URL Configuration → Site URL**
-
-| Environment | Site URL |
-| --- | --- |
-| Local dev | `http://localhost:3000` |
-
-#### 2. Redirect URLs
-
-On the same page, add these to **Redirect URLs** (one per line):
-
-```text
-http://localhost:3000/auth/callback
-```
-
-Password reset links go through `/auth/callback` and then to `/auth/reset-password`. If this URL is missing, reset emails will fail or redirect to an error page.
-
-#### 3. Email delivery
-
-Supabase sends signup and password-reset emails for you.
-
-| Setup | Good for |
-| --- | --- |
-| **Supabase built-in email** (default) | Local testing, personal/small self-hosted installs |
-| **Custom SMTP** (Supabase → Authentication → Email → SMTP) | Optional — better deliverability if built-in email is unreliable |
-
-For custom SMTP, use a provider such as Resend, SendGrid, or Gmail app password. Without working email, **Forgot password** (and signup confirmation, if enabled) will not reach users.
-
-#### 4. Branded emails (Clarify instead of Supabase)
-
-By default, reset emails say **Supabase Auth** and include a “powered by Supabase” footer.
-
-**Where:** Supabase → **Authentication → Emails** → **Templates** tab (not Project Settings).
-
-**Catch:** Supabase requires **custom SMTP** before templates are editable. If you see *“Set up custom SMTP to edit templates”*, go to the **SMTP Settings** tab first, connect a provider (Resend, Gmail, etc.), then return to **Templates**.
-
-After SMTP is on:
-
-1. Click **Reset password**
-2. Subject: `Reset your Clarify password`
-3. Paste HTML from [`supabase/email-templates/recovery.html`](supabase/email-templates/recovery.html)
-4. Set sender name to **Clarify** in SMTP settings
-
-Optional: **Confirm sign up** template using [`confirmation.html`](supabase/email-templates/confirmation.html).
-
-Step-by-step (including free Resend setup): [`supabase/email-templates/README.md`](supabase/email-templates/README.md).
-
-**No SMTP?** Forgot password still works — users just get Supabase’s default email. Branding is optional.
-
-#### Flow (for reference)
-
-```
-User clicks "Forgot password?" → enters email
-  → Supabase sends reset link
-  → user clicks link → /auth/callback → /auth/reset-password
-  → user sets new password → dashboard
-```
-
-No extra env vars or Clarify code changes are required beyond normal Supabase setup.
-
-### 3. Get a Google AI key
-
-1. Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
-2. Create an API key (a **new project** is easiest — it auto-enables the Gemini API).
-3. The same key covers both Gemini text generation and embeddings.
-
-**Free tier limits** (typical for `gemini-2.5-flash`): about **5 requests/min** and **250 requests/day** per project. Heavy use (uploads + search + ask in quick succession) will hit these limits. Enable billing on your Google AI project for higher quotas — you still get free allowance; you only pay if you exceed it.
-
-### 4. Environment variables
-
-Copy `.env.example` to `.env.local` and fill in your values:
-
-```bash
-cp .env.example .env.local
-```
-
-```env
-GOOGLE_AI_API_KEY=your-google-ai-api-key
-NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
-```
-
-| Variable | Where to find it |
-| --- | --- |
-| `GOOGLE_AI_API_KEY` | [AI Studio → API keys](https://aistudio.google.com/app/apikey) |
-| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → **Project Settings → API** |
-| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same page, `anon` public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Same page, `service_role` secret — **server-side only**, never expose to the browser |
-
-Optional tuning (see `.env.example`):
-
-```env
-# GEMINI_RPM=5
-# GEMINI_RPD=250
-# GEMINI_QUEUE_MS=12000
-```
-
-### 5. Run
-
-```bash
-npm run dev
-```
-
-Open [http://localhost:3000](http://localhost:3000), sign up, create a course, and upload a PDF.
 
 ---
 
@@ -232,7 +86,7 @@ Gemini accepts up to ~9.5 hours of audio per prompt, so a 3-hour class is well w
 
 In-app recordings are captured as **mono at 24kbps**, since Gemini downsamples everything to 16kbps mono anyway. Recording at the browser default would make uploads roughly 10x slower for no gain in accuracy — a 3-hour lecture comes out around 32MB instead of 170MB.
 
-> **Hosting note:** serverless platforms cap request bodies far below 200MB — Vercel's limit is **4.5 MB**, and no configuration changes it. Long lectures therefore work when you run Clarify **locally** (`npm run dev` / `npm start`), where no such cap exists. A hosted deployment is fine for short clips. Bear in mind uploads are also bound by your own connection speed: a 200MB file on a slow uplink can take a long time.
+Long lectures work when you run Clarify **locally** (`npm run dev` / `npm start`). Serverless hosts cap request bodies far below 200MB (Vercel’s limit is **4.5 MB**). Uploads are also bound by your connection: a 200MB file on a slow uplink takes a while.
 
 **Transcript fallback.** When a recording is too big to upload (or you already have a transcript from Zoom, Teams, or your phone), expand *"Too big to upload? Paste a transcript instead"* and paste the text — up to 500,000 characters, roughly a 6-hour lecture. It runs the same prompt as the audio path, so the notes come out identically structured, and it uploads nothing — which also sidesteps serverless request-body caps.
 
@@ -319,6 +173,204 @@ supabase/migrations/       # SQL schema + RLS + storage
 - **Never commit** `.env.local` or real API keys to Git (already in `.gitignore`).
 - **Never** put `SUPABASE_SERVICE_ROLE_KEY` or `GOOGLE_AI_API_KEY` in client-side code or `NEXT_PUBLIC_*` variables.
 - Rotate keys immediately if they are accidentally exposed.
+
+---
+
+## Setup (do these in order)
+
+You need about 10–15 minutes and two free accounts. Skip a step and something later will fail silently (uploads, login, or AI).
+
+### What you need first
+
+| Tool | Why | Get it |
+| --- | --- | --- |
+| **Node.js 20** (18.18+ is the minimum) | Runs the app | [nodejs.org](https://nodejs.org) — install the LTS build, then reopen the terminal |
+| **Git** | Clone the repo | [git-scm.com](https://git-scm.com) |
+| **A Google account** | Gemini API key | [aistudio.google.com](https://aistudio.google.com) |
+| **A Supabase account** | Database, login, file storage | [supabase.com](https://supabase.com) |
+
+Check Node is installed:
+
+```bash
+node -v
+```
+
+You should see `v20` or similar. If the command is not found, Node is not on your PATH — reinstall it and open a **new** terminal.
+
+### 1. Clone the repo and install packages
+
+```bash
+git clone https://github.com/ShaunCraft4/Clarify.git
+cd Clarify
+npm install
+```
+
+Wait until `npm install` finishes without errors.
+
+### 2. Create a Supabase project
+
+1. Go to [supabase.com/dashboard](https://supabase.com/dashboard) and sign in.
+2. **New project**.
+3. Pick an org (the default personal one is fine), a name (e.g. `clarify`), a database password — **save that password**, you will not need it in `.env.local` but you cannot see it again — and a region close to you.
+4. Wait until the project shows **Healthy** (usually under two minutes).
+
+Leave this tab open. You will copy keys from it in step 6.
+
+### 3. Run the database migrations
+
+This creates every table, enables Row Level Security, turns on `pgvector`, and creates the private `materials` storage bucket. You do **not** create the bucket by hand.
+
+1. In the Supabase dashboard, open **SQL Editor** (left sidebar).
+2. For **each** file below, in order:
+   1. Open the file in this repo.
+   2. Select all, copy.
+   3. In SQL Editor click **New query**, paste the whole file, click **Run**.
+   4. Confirm it says success (green). Then do the next file.
+
+| Order | File | What it adds |
+| --- | --- | --- |
+| 1 | [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) | Courses, materials, chunks, flashcards, quizzes, storage bucket |
+| 2 | [`supabase/migrations/0002_srs_rubric_exams.sql`](supabase/migrations/0002_srs_rubric_exams.sql) | Spaced repetition, rubrics, exam simulations |
+| 3 | [`supabase/migrations/0003_course_emoji.sql`](supabase/migrations/0003_course_emoji.sql) | Course emoji icons |
+| 4 | [`supabase/migrations/0004_chat_messages.sql`](supabase/migrations/0004_chat_messages.sql) | Ask chat history saved to your account |
+| 5 | [`supabase/migrations/0005_study_streak.sql`](supabase/migrations/0005_study_streak.sql) | Daily study streak |
+
+**Run all five.** Skipping one leaves that table with no access policy — the UI looks fine, but saves fail (chat history is the usual victim).
+
+If a statement errors because something “already exists”, you likely ran that file twice. That is usually harmless; continue with the next unused file.
+
+### 4. Configure login for local use
+
+Still in the Supabase dashboard:
+
+**Email confirmation (do this or you will not get in)**
+
+1. **Authentication → Providers → Email**.
+2. Email/password is on by default — leave it on.
+3. Turn **Confirm email** **off** for local use. Otherwise every new account sits in limbo until you click a link that may never arrive (Supabase’s built-in mail is easy to miss or land in spam).
+
+You can turn confirmation back on later if you want. Forgot-password still works either way.
+
+**URLs (needed for password reset)**
+
+1. **Authentication → URL Configuration**.
+2. **Site URL:** `http://localhost:3000`
+3. **Redirect URLs** — add exactly:
+
+```text
+http://localhost:3000/auth/callback
+```
+
+Password-reset links go to `/auth/callback`, then `/auth/reset-password`. If this URL is missing, reset emails break.
+
+Branded “Clarify” emails (instead of “Supabase Auth”) are optional and need SMTP. Skip them until the app runs — see [Optional: password-reset emails](#optional-password-reset-emails) below.
+
+### 5. Create a Google AI Studio key
+
+1. Open [aistudio.google.com/app/apikey](https://aistudio.google.com/app/apikey) and sign in with Google.
+2. **Create API key**. A **new Google Cloud project** is easiest — Studio enables the Gemini API for you.
+3. Copy the key. One key covers chat, notes, quizzes, **and** embeddings.
+
+Free-tier quotas for `gemini-2.5-flash` are typically about **5 requests/minute** and **250/day** per project. Uploading a PDF, then immediately asking and generating flashcards, can hit the per-minute cap. Wait a minute and retry, or enable billing on that Google Cloud project for higher limits (you still get a free allowance; you only pay if you go over).
+
+### 6. Put the secrets in `.env.local`
+
+In the project folder, copy the example env file:
+
+```bash
+# macOS / Linux
+cp .env.example .env.local
+
+# Windows (PowerShell or Command Prompt)
+copy .env.example .env.local
+```
+
+Open `.env.local` and fill in four values. **No quotes, no spaces around `=`.**
+
+```env
+GOOGLE_AI_API_KEY=your-google-ai-api-key
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-ref.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
+```
+
+| Variable | Where to copy it |
+| --- | --- |
+| `GOOGLE_AI_API_KEY` | [AI Studio → API keys](https://aistudio.google.com/app/apikey) |
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase → **Project Settings → API** → Project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Same page → **anon** / **public** key |
+| `SUPABASE_SERVICE_ROLE_KEY` | Same page → **service_role** secret. Click **Reveal**. Server-side only — never put this in `NEXT_PUBLIC_*` or share it |
+
+`.env.local` is gitignored. Never commit it.
+
+If you change this file while `npm run dev` is already running, **stop it (Ctrl+C) and start it again**. Next.js only reads env vars at boot.
+
+Optional knobs (defaults already match the Gemini free tier) live in `.env.example`:
+
+```env
+# GEMINI_RPM=5
+# GEMINI_RPD=250
+# GEMINI_QUEUE_MS=12000
+```
+
+### 7. Start the app
+
+```bash
+npm run dev
+```
+
+When the terminal says it is ready, open [http://localhost:3000](http://localhost:3000). You should see the login page.
+
+To run a production-style build later (still on your machine):
+
+```bash
+npm run build
+npm start
+```
+
+That still uses `.env.local`. Long audio uploads work in both `dev` and `start` locally; they fail on typical serverless hosts because those cap request bodies around **4.5 MB**.
+
+### 8. First-time walkthrough
+
+1. Click **Create an account**, use any email and a password of **at least 6 characters**, then log in.
+2. On the dashboard, create a course (name it after a class).
+3. Open the course → **Materials**. Upload a **PDF**, `.txt`, or Markdown file. Status should move **Uploading → Extracting → Chunking → Embedding → Done**.
+4. When a material is **Done**, try **Ask** (“What is this lecture about?”) or **Notes**.
+
+If upload sits on **error**, or Ask says it has no materials, see [Troubleshooting](#troubleshooting).
+
+### Optional: password-reset emails
+
+Clarify’s login page has **Forgot password?**. Supabase sends the email — you do not configure extra env vars.
+
+- **Default:** it already works with Supabase’s built-in mail. The message will say “Supabase Auth”. Check spam.
+- **Branded Clarify emails:** you must attach **custom SMTP** first (Resend’s free tier is enough), then paste the HTML templates. Full walkthrough: [`supabase/email-templates/README.md`](supabase/email-templates/README.md).
+
+Flow:
+
+```
+Forgot password? → enter email
+  → Supabase sends a link
+  → /auth/callback → /auth/reset-password
+  → new password → dashboard
+```
+
+---
+
+## Troubleshooting
+
+| What you see | Likely cause | Fix |
+| --- | --- | --- |
+| Sign-up succeeds but you cannot log in | **Confirm email** is still on | Auth → Providers → Email → turn Confirm email **off**, or open the confirm link in your inbox/spam |
+| Login page loads unstyled / buttons do nothing | Dev server not running, or you opened the wrong port | Use the URL printed by `npm run dev` (usually `http://localhost:3000`) |
+| “Invalid API key” / app crashes on AI actions | Missing or truncated `GOOGLE_AI_API_KEY` | Paste the full key into `.env.local`, restart `npm run dev` |
+| Upload fails / `Upload failed` | Wrong `SUPABASE_SERVICE_ROLE_KEY`, or migration 0001 not run (no `materials` bucket) | Re-copy the **service_role** key; re-run `0001_init.sql` |
+| Materials never leave `pending` / `error` | Gemini key missing, or free-tier quota hit | Check `.env.local`, wait a minute, retry. Look at the terminal running `npm run dev` for the error |
+| Ask / notes work, but chat vanishes after refresh | Migration `0004` not applied, or its RLS policy missing | Run [`0004_chat_messages.sql`](supabase/migrations/0004_chat_messages.sql) in SQL Editor |
+| `429` / “rate limit” / “quota” from Gemini | Free tier (~5/min, ~250/day) | Wait; space out generations. Optional: enable billing on that Google Cloud project |
+| Microphone button errors | Browser blocks mic on non-secure origins | Use `http://localhost:3000` (localhost is allowed). `file://` or a LAN IP without HTTPS will not |
+| Password reset link errors | Redirect URL not allow-listed | Add `http://localhost:3000/auth/callback` under Auth → URL Configuration |
+| Changed `.env.local` but nothing changed | Next.js does not hot-reload env | Stop the server and run `npm run dev` again |
 
 ---
 
