@@ -6,7 +6,7 @@ The core differentiator: Clarify doesn't just answer questions about documents. 
 
 Clarify is meant to be **run on your own machine**. You use your own free Supabase project and your own Google AI key. Nothing in this repo spends anyone else's quota.
 
-To get it running, skip to [Setup](#setup-do-these-in-order).
+To get it running, skip to [Setup](#setup-do-these-in-order). After it works on your machine, [step 9](#9-optional-put-it-on-vercel-so-it-stays-online) deploys **your** copy to Vercel so you can open it in a browser without leaving `npm run dev` running.
 
 ---
 
@@ -188,6 +188,7 @@ You need about 10–15 minutes and two free accounts. Skip a step and something 
 | **Git** | Clone the repo | [git-scm.com](https://git-scm.com) |
 | **A Google account** | Gemini API key | [aistudio.google.com](https://aistudio.google.com) |
 | **A Supabase account** | Database, login, file storage | [supabase.com](https://supabase.com) |
+| **A Vercel account** (optional) | Keep the site online without a local server | [vercel.com](https://vercel.com) — GitHub login is easiest |
 
 Check Node is installed:
 
@@ -261,7 +262,7 @@ You can turn confirmation back on later if you want. Forgot-password still works
 http://localhost:3000/auth/callback
 ```
 
-Password-reset links go to `/auth/callback`, then `/auth/reset-password`. If this URL is missing, reset emails break.
+Password-reset links go to `/auth/callback`, then `/auth/reset-password`. If this URL is missing, reset emails break. After you deploy (step 9), add the Vercel callback URL here too — keep the localhost line if you still run locally.
 
 Branded “Clarify” emails (instead of “Supabase Auth”) are optional and need SMTP. Skip them until the app runs — see [Optional: password-reset emails](#optional-password-reset-emails) below.
 
@@ -339,6 +340,66 @@ That still uses `.env.local`. Long audio uploads work in both `dev` and `start` 
 
 If upload sits on **error**, or Ask says it has no materials, see [Troubleshooting](#troubleshooting).
 
+### 9. Optional: put it on Vercel so it stays online
+
+Local `npm run dev` only works while that terminal is open, and it occupies `http://localhost:3000`. Deploying **your** copy to Vercel gives you a public HTTPS URL (for example `https://your-app.vercel.app`) that stays up. This is still self-hosting: the keys and the Supabase project are yours. It is not a shared demo.
+
+Finish steps 1–8 first so you know the keys work.
+
+**A. Put the code on GitHub** (Vercel deploys from a repo)
+
+- Easiest: open [github.com/ShaunCraft4/Clarify](https://github.com/ShaunCraft4/Clarify) → **Fork**.
+- Or create an empty GitHub repo and push your clone:
+
+```bash
+git remote set-url origin https://github.com/YOUR_USERNAME/YOUR_REPO.git
+git push -u origin main
+```
+
+**B. Import the project on Vercel**
+
+1. Sign in at [vercel.com](https://vercel.com) with GitHub.
+2. **Add New… → Project** and import the fork (or your repo).
+3. Framework Preset should be **Next.js**. Leave the build command and output directory on defaults.
+4. Open **Environment Variables** and add the **same four** names as `.env.local` (Production, Preview, and Development):
+
+   - `GOOGLE_AI_API_KEY`
+   - `NEXT_PUBLIC_SUPABASE_URL`
+   - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - `SUPABASE_SERVICE_ROLE_KEY`
+
+   Paste the values from `.env.local`. Do not commit that file.
+5. **Deploy**. When it finishes, copy the URL (`.vercel.app`).
+
+**C. Point Supabase at that URL**
+
+Vercel does not replace step 4. Login and password reset still use the Supabase URL list.
+
+1. Supabase → **Authentication → URL Configuration**.
+2. **Site URL:** your Vercel URL, for example `https://your-app.vercel.app` (no trailing slash). Use this as Site URL if Vercel is how you open the app day to day.
+3. **Redirect URLs** — add (keep localhost if you still develop locally):
+
+```text
+http://localhost:3000/auth/callback
+https://your-app.vercel.app/auth/callback
+```
+
+If Vercel later assigns a different production domain, add that callback too. Forgot-password and OAuth-style redirects fail until the exact origin is listed.
+
+**D. Open the site**
+
+Visit the Vercel URL, sign up or log in with the same account as local (same Supabase project = same data). You can close the `npm run dev` terminal.
+
+**Limits on the free Hobby plan** (this is why local still matters):
+
+| Limit | What it means |
+| --- | --- |
+| Request body **~4.5 MB** | Short audio clips are fine. Full lecture files and large recordings will fail with 413 — paste a transcript, or run locally for long audio |
+| Function timeout | Big PDF extract + embed jobs can die mid-way if they take too long. Retry, split the file, or process heavy uploads with `npm run dev` |
+| Microphone | Works on the Vercel HTTPS URL. It does not work on a raw LAN IP over HTTP |
+
+Changing env vars on Vercel requires a **Redeploy** (Deployments → … → Redeploy). Changing only Supabase URL settings does not.
+
 ### Optional: password-reset emails
 
 Clarify’s login page has **Forgot password?**. Supabase sends the email — you do not configure extra env vars.
@@ -369,8 +430,11 @@ Forgot password? → enter email
 | Ask / notes work, but chat vanishes after refresh | Migration `0004` not applied, or its RLS policy missing | Run [`0004_chat_messages.sql`](supabase/migrations/0004_chat_messages.sql) in SQL Editor |
 | `429` / “rate limit” / “quota” from Gemini | Free tier (~5/min, ~250/day) | Wait; space out generations. Optional: enable billing on that Google Cloud project |
 | Microphone button errors | Browser blocks mic on non-secure origins | Use `http://localhost:3000` (localhost is allowed). `file://` or a LAN IP without HTTPS will not |
-| Password reset link errors | Redirect URL not allow-listed | Add `http://localhost:3000/auth/callback` under Auth → URL Configuration |
+| Password reset link errors | Redirect URL not allow-listed | Add `http://localhost:3000/auth/callback` (and your `https://….vercel.app/auth/callback` if deployed) under Auth → URL Configuration |
 | Changed `.env.local` but nothing changed | Next.js does not hot-reload env | Stop the server and run `npm run dev` again |
+| Vercel deploy is live but login / AI fails | Env vars missing on Vercel, or not applied to Production | Project → Settings → Environment Variables → add all four → **Redeploy** |
+| Vercel: audio or large upload returns 413 | Hobby plan caps request bodies at ~4.5 MB | Use a shorter clip, paste a transcript, or upload that file while running locally |
+| Vercel login loops or reset link goes to localhost | Site URL / Redirect URLs still only list localhost | Set Site URL to the Vercel origin and add `https://your-app.vercel.app/auth/callback` |
 
 ---
 
