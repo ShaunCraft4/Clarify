@@ -1,7 +1,9 @@
-import { Worker } from "node:worker_threads";
-import path from "node:path";
+// Import the inner module directly to avoid pdf-parse's index.js debug code,
+// which tries to read a bundled test PDF at load time and crashes under Next.
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
-/** Only treat the worker as dead if a single page is silent this long. */
+/** Only treat extract as dead if a page is silent this long. */
 const STALL_MS = 3 * 60 * 1000;
 
 export interface PdfExtractResult {
@@ -11,10 +13,38 @@ export interface PdfExtractResult {
 
 export type PdfProgress = (page: number, total: number) => void;
 
+type PdfPage = {
+  pageNumber?: number;
+  getTextContent: (opts: object) => Promise<{
+    items: { str: string; transform: number[] }[];
+  }>;
+};
+
+function renderPage(pageData: PdfPage): Promise<string> {
+  return pageData
+    .getTextContent({
+      normalizeWhitespace: false,
+      disableCombineTextItems: false,
+    })
+    .then((textContent) => {
+      let lastY: number | undefined;
+      let text = "";
+      for (const item of textContent.items) {
+        if (lastY == item.transform[5] || lastY === undefined) {
+          text += item.str;
+        } else {
+          text += `\n${item.str}`;
+        }
+        lastY = item.transform[5];
+      }
+      return text;
+    });
+}
+
 /**
- * Extract every page of a PDF in a worker thread. There is no page cap and no
- * overall time limit — a textbook can take as long as it needs. The worker is
- * only killed if it goes silent for STALL_MS (a hung page, not a slow book).
+ * Extract every page. No page cap and no overall time limit. Progress fires
+ * after each page so the UI can show "Page 12…". A stall timer only trips if
+ * a single page goes silent for STALL_MS.
  */
 export async function extractPdfText(
   buffer: Buffer,
@@ -24,86 +54,55 @@ export async function extractPdfText(
   return text;
 }
 
-export function extractPdfTextDetailed(
+export async function extractPdfTextDetailed(
   buffer: Buffer,
   onProgress?: PdfProgress
 ): Promise<PdfExtractResult> {
-  const workerPath = path.join(process.cwd(), "workers", "pdf-extract.cjs");
+  let page = 0;
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  let rejectStall: (err: Error) => void = () => {};
 
-  return new Promise((resolve, reject) => {
-    const worker = new Worker(workerPath);
-    let settled = false;
-    let lastPage = 0;
-
-    const finish = (fn: () => void) => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(stallTimer);
-      void worker.terminate();
-      fn();
-    };
-
-    const bumpStall = () => {
-      clearTimeout(stallTimer);
-      stallTimer = setTimeout(() => {
-        finish(() =>
-          reject(
-            new Error(
-              `PDF extraction froze on page ${lastPage || 1} (no progress for 3 minutes). Keep the app running and click Retry.`
-            )
-          )
-        );
-      }, STALL_MS);
-    };
-
-    let stallTimer = setTimeout(() => {}, 0);
-    bumpStall();
-
-    worker.on(
-      "message",
-      (msg: {
-        type?: string;
-        page?: number;
-        total?: number;
-        text?: string;
-        pages?: number;
-        error?: string;
-        ok?: boolean;
-      }) => {
-        if (msg.type === "progress" || (msg.page && !msg.type && !msg.ok && !msg.text)) {
-          lastPage = msg.page ?? lastPage;
-          bumpStall();
-          onProgress?.(msg.page ?? lastPage, msg.total ?? 0);
-          return;
-        }
-        if (msg.type === "error" || msg.ok === false) {
-          finish(() =>
-            reject(new Error(msg.error || "Could not read this PDF."))
-          );
-          return;
-        }
-        if (msg.type === "done" || msg.ok) {
-          finish(() =>
-            resolve({ text: msg.text ?? "", pages: msg.pages ?? lastPage })
-          );
-        }
-      }
-    );
-
-    worker.once("error", (err) => {
-      finish(() => reject(err));
-    });
-
-    worker.once("exit", (code) => {
-      if (code !== 0 && !settled) {
-        finish(() =>
-          reject(new Error(`PDF worker exited unexpectedly (${code}).`))
-        );
-      }
-    });
-
-    worker.postMessage(buffer);
+  const stalled = new Promise<never>((_, reject) => {
+    rejectStall = reject;
   });
+
+  const bumpStall = () => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => {
+      rejectStall(
+        new Error(
+          `PDF extraction froze on page ${page || 1} (no progress for 3 minutes). Keep the app running and click Retry.`
+        )
+      );
+    }, STALL_MS);
+  };
+
+  bumpStall();
+  onProgress?.(0, 0);
+
+  try {
+    const data = await Promise.race([
+      pdfParse(buffer, {
+        max: 0,
+        pagerender: async (pageData: PdfPage) => {
+          page += 1;
+          bumpStall();
+          onProgress?.(pageData.pageNumber || page, 0);
+          return renderPage(pageData);
+        },
+      }),
+      stalled,
+    ]);
+
+    const text = String(data.text || "")
+      .replace(/\u0000/g, "")
+      .trim();
+    const pages = Number(data.numpages) || page;
+    if (pages) onProgress?.(pages, pages);
+    return { text, pages };
+  } finally {
+    if (stallTimer) clearTimeout(stallTimer);
+  }
 }
 
 /** Extract text from a plain-text/markdown buffer (notes). */

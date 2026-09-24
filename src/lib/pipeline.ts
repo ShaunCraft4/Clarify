@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/admin";
-import { extractPdfText, extractPlainText } from "@/lib/pdf";
+import { extractPdfTextDetailed, extractPlainText } from "@/lib/pdf";
 import { chunkText } from "@/lib/ai/chunking";
 import { embedDocuments } from "@/lib/ai/embeddings";
 import { ocrPdf } from "@/lib/ai/gemini";
@@ -142,7 +142,7 @@ export async function processMaterial(params: {
     } else {
       await setProgress(materialId, "extracting", "Opening PDF…");
       let lastWrite = 0;
-      text = await extractPdfText(buffer, (page, total) => {
+      const extracted = await extractPdfTextDetailed(buffer, (page, total) => {
         const now = Date.now();
         if (page !== total && page > 0 && now - lastWrite < 400) return;
         lastWrite = now;
@@ -151,6 +151,14 @@ export async function processMaterial(params: {
           : `Page ${page}`;
         void setProgress(materialId, "extracting", `${label}…`);
       });
+      text = extracted.text;
+      if (extracted.pages) {
+        await setProgress(
+          materialId,
+          "extracting",
+          `Extracted ${extracted.pages} pages…`
+        );
+      }
     }
 
     console.log(
