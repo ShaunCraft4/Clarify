@@ -394,7 +394,7 @@ Visit the Vercel URL, sign up or log in with the same account as local (same Sup
 
 | Limit | What it means |
 | --- | --- |
-| Request body **~4.5 MB** | Short audio clips are fine. Full lecture files and large recordings will fail with 413 — paste a transcript, or run locally for long audio |
+| Request body **~4.5 MB** | **Course PDFs go around this** — the browser uploads them straight to your Supabase Storage (up to ~50 MB). **Audio notes** still travel through Vercel, so long recordings fail with 413 — paste a transcript, or run locally |
 | Function timeout | Big PDF extract + embed jobs can die mid-way if they take too long. Retry, split the file, or process heavy uploads with `npm run dev` |
 | Microphone | Works on the Vercel HTTPS URL. It does not work on a raw LAN IP over HTTP |
 
@@ -433,7 +433,8 @@ Forgot password? → enter email
 | Password reset link errors | Redirect URL not allow-listed | Add `http://localhost:3000/auth/callback` (and your `https://….vercel.app/auth/callback` if deployed) under Auth → URL Configuration |
 | Changed `.env.local` but nothing changed | Next.js does not hot-reload env | Stop the server and run `npm run dev` again |
 | Vercel deploy is live but login / AI fails | Env vars missing on Vercel, or not applied to Production | Project → Settings → Environment Variables → add all four → **Redeploy** |
-| Vercel: audio or large upload returns 413 | Hobby plan caps request bodies at ~4.5 MB | Use a shorter clip, paste a transcript, or upload that file while running locally |
+| Vercel: audio returns 413 | Hobby plan caps request bodies at ~4.5 MB | Use a shorter clip, paste a transcript, or record/upload audio while running locally |
+| Course PDF upload fails as too large | File over 50 MB, or the Storage bucket still has a smaller cap | Compress/split the PDF, or Supabase → Storage → `materials` → raise the file size limit |
 | Vercel login loops or reset link goes to localhost | Site URL / Redirect URLs still only list localhost | Set Site URL to the Vercel origin and add `https://your-app.vercel.app/auth/callback` |
 
 ---

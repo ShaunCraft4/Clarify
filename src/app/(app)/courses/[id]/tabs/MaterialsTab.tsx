@@ -4,6 +4,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { apiFetch } from "@/lib/fetcher";
 import { invalidateCourseCache } from "@/lib/course-cache";
 import { useCourseMaterials, type MaterialRow } from "@/hooks/useCourseMaterials";
+import {
+  formatBytes,
+  MAX_MATERIAL_BYTES,
+  removeMaterialFromStorage,
+  uploadMaterialToStorage,
+} from "@/lib/material-upload";
 import type { FileType } from "@/lib/types";
 import {
   Upload,
@@ -69,6 +75,7 @@ export default function MaterialsTab({
   const [fileType, setFileType] = useState<FileType>("pdf");
   const [dragging, setDragging] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
@@ -84,23 +91,38 @@ export default function MaterialsTab({
   const upload = useCallback(
     async (files: FileList | File[]) => {
       setUploadError(null);
-      for (const file of Array.from(files)) {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("fileType", fileType);
-        try {
-          await apiFetch(`/api/courses/${courseId}/materials`, {
-            method: "POST",
-            body: fd,
-          });
-        } catch (err) {
-          setUploadError(
-            err instanceof Error ? err.message : "Upload failed"
-          );
+      setUploading(true);
+      try {
+        for (const file of Array.from(files)) {
+          let storagePath: string | null = null;
+          try {
+            storagePath = await uploadMaterialToStorage(file, courseId);
+            await apiFetch(`/api/courses/${courseId}/materials`, {
+              method: "POST",
+              body: JSON.stringify({
+                storagePath,
+                fileName: file.name,
+                fileType,
+              }),
+            });
+          } catch (err) {
+            if (storagePath) {
+              await removeMaterialFromStorage(storagePath).catch(() => {});
+            }
+            const message =
+              err instanceof Error ? err.message : "Upload failed";
+            setUploadError(
+              message.includes("413")
+                ? `That file is ${formatBytes(file.size)} — too large to send through this host. Refresh and try again; uploads now go straight to storage (up to ${formatBytes(MAX_MATERIAL_BYTES)}).`
+                : message
+            );
+          }
         }
+        invalidateCourseCache(courseId, "materials");
+        await refresh();
+      } finally {
+        setUploading(false);
       }
-      invalidateCourseCache(courseId, "materials");
-      await refresh();
     },
     [courseId, fileType, refresh]
   );
@@ -154,21 +176,30 @@ export default function MaterialsTab({
             setDragging(false);
             if (e.dataTransfer.files.length) upload(e.dataTransfer.files);
           }}
-          onClick={() => inputRef.current?.click()}
+          onClick={() => {
+            if (!uploading) inputRef.current?.click();
+          }}
           className={cn(
             "rounded-2xl border-2 border-dashed p-10 text-center cursor-pointer transition-colors",
             dragging
               ? "border-brand-500 bg-brand-50"
-              : "border-slate-300 bg-white hover:border-brand-400"
+              : "border-slate-300 bg-white hover:border-brand-400",
+            uploading && "pointer-events-none opacity-70"
           )}
         >
-          <Upload className="h-8 w-8 mx-auto text-slate-400" />
+          {uploading ? (
+            <Loader2 className="h-8 w-8 mx-auto text-brand-600 animate-spin" />
+          ) : (
+            <Upload className="h-8 w-8 mx-auto text-slate-400" />
+          )}
           <p className="mt-3 font-medium text-slate-700">
-            Drag &amp; drop a file, or click to browse
+            {uploading
+              ? "Uploading…"
+              : "Drag & drop a file, or click to browse"}
           </p>
           <p className="text-sm text-slate-500 mt-1">
             PDFs and slide exports are parsed automatically. Notes can be .txt
-            or .md.
+            or .md. Up to {formatBytes(MAX_MATERIAL_BYTES)} per file.
           </p>
           <input
             ref={inputRef}
