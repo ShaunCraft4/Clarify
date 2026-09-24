@@ -20,6 +20,7 @@ import {
   Loader2,
   Sparkles,
   NotebookPen,
+  RotateCcw,
 } from "lucide-react";
 import { cn } from "@/lib/cn";
 
@@ -52,10 +53,16 @@ function StatusBadge({ m }: { m: MaterialRow }) {
     chunking: gen ? "Organizing" : "Chunking",
     embedding: "Embedding",
   };
+  const heartbeat = m.error?.replace(/\s*…$/, "") ?? "";
   return (
-    <span className="inline-flex items-center gap-1 text-xs font-medium text-brand-700 bg-brand-50 rounded-full px-2.5 py-1">
-      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-      {labels[m.status] ?? "Processing"}…
+    <span
+      title="Keep this tab and the app running — the page/chunk count should keep moving."
+      className="inline-flex max-w-full items-center gap-1 text-xs font-medium text-brand-700 bg-brand-50 rounded-full px-2.5 py-1"
+    >
+      <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin" />
+      <span className="truncate">
+        {heartbeat || `${labels[m.status] ?? "Processing"}…`}
+      </span>
     </span>
   );
 }
@@ -130,6 +137,17 @@ export default function MaterialsTab({
   async function remove(id: string) {
     if (!confirm("Delete this material and its chunks?")) return;
     await apiFetch(`/api/materials/${id}`, { method: "DELETE" }).catch(() => {});
+    invalidateCourseCache(courseId, "materials");
+    await refresh();
+  }
+
+  async function retry(id: string) {
+    setUploadError(null);
+    try {
+      await apiFetch(`/api/materials/${id}/reprocess`, { method: "POST" });
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : "Retry failed");
+    }
     invalidateCourseCache(courseId, "materials");
     await refresh();
   }
@@ -290,6 +308,17 @@ export default function MaterialsTab({
               </p>
             </div>
             <StatusBadge m={m} />
+            {m.status === "error" && m.storage_path && (
+              <button
+                type="button"
+                onClick={() => retry(m.id)}
+                title="Retry processing"
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                <RotateCcw className="h-3.5 w-3.5" />
+                Retry
+              </button>
+            )}
             <button
               onClick={() => remove(m.id)}
               className="p-2 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-600"

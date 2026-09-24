@@ -1,7 +1,8 @@
+import { after } from "next/server";
 import { NextRequest, NextResponse } from "next/server";
 import { handle, requireCourse, ApiError } from "@/lib/api";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { processMaterial } from "@/lib/pipeline";
+import { markStuckMaterials, processMaterial } from "@/lib/pipeline";
 import { isOwnedMaterialPath } from "@/lib/material-limits";
 import type { FileType } from "@/lib/types";
 
@@ -24,7 +25,20 @@ export async function GET(
       .eq("course_id", id)
       .order("uploaded_at", { ascending: false });
     if (error) throw error;
-    return NextResponse.json({ materials: data });
+    const rows = data ?? [];
+    const stuck = await markStuckMaterials(rows);
+    const materials = rows.map((row) =>
+      stuck.has(row.id)
+        ? {
+            ...row,
+            status: "error" as const,
+            error:
+              row.error ||
+              "Processing stopped unexpectedly (the app was probably closed). Keep Clarify running and click Retry.",
+          }
+        : row
+    );
+    return NextResponse.json({ materials });
   });
 }
 
@@ -67,14 +81,15 @@ export async function POST(
       .single();
     if (insErr) throw insErr;
 
-    // Kick off processing in the background; the client polls for status.
-    void processMaterial({
-      materialId: material.id,
-      courseId: id,
-      userId: user.id,
-      storagePath,
-      fileType,
-    });
+    after(() =>
+      processMaterial({
+        materialId: material.id,
+        courseId: id,
+        userId: user.id,
+        storagePath,
+        fileType,
+      })
+    );
 
     return NextResponse.json({ material }, { status: 201 });
   });
